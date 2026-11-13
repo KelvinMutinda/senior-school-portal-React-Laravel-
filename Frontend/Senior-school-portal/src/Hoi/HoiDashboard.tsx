@@ -2,6 +2,7 @@ import React, { useMemo, useState } from "react";
 import HeaderSection, { type Theme } from "../components/HeaderSection";
 
 
+
 export type Role = "HOI" | "DEPUTY" | "TEACHER" | "FINANCE";
 
 export interface LayoutUser {
@@ -17,7 +18,7 @@ export interface MenuItem {
   route: string;
   perm: string;
   icon: IconName;
-  badge?: string; 
+  badge?: string; // key into the badges map
 }
 
 export interface MenuGroup {
@@ -25,6 +26,7 @@ export interface MenuGroup {
   items: MenuItem[];
 }
 
+/* ---------- Icons ---------- */
 
 const PATHS = {
   home: "M3 11l9-8 9 8v10a1 1 0 0 1-1 1h-5v-7H9v7H4a1 1 0 0 1-1-1z",
@@ -68,6 +70,7 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   );
 }
 
+/* ---------- 1. Menu and permissions ---------- */
 
 export const MENU: MenuGroup[] = [
   { group: "Overview", items: [
@@ -132,6 +135,7 @@ export const ROLE_PERMS: Record<Role, string[]> = {
   ],
 };
 
+/** Filters MENU by the role's permissions and hides empty groups. */
 export function buildMenu(role: Role, extraPerms: string[] = []): MenuGroup[] {
   const perms = new Set([...ROLE_PERMS[role], ...extraPerms]);
   return MENU
@@ -139,7 +143,7 @@ export function buildMenu(role: Role, extraPerms: string[] = []): MenuGroup[] {
     .filter((g) => g.items.length > 0);
 }
 
-
+/* ---------- 2. Sidebar ---------- */
 
 interface SidebarProps {
   menu: MenuGroup[];
@@ -199,14 +203,14 @@ export function Sidebar({ menu, activeKey, badges, open, onClose, onNavigate, sc
   );
 }
 
-
+/* ---------- 3. Layout shell ---------- */
 
 interface LayoutProps {
   role: Role;
   user: LayoutUser;
   title: string;
   children: React.ReactNode;
-  isClassTeacher?: boolean; 
+  isClassTeacher?: boolean; // adds the Report Comments item for teachers
   activeKey?: string;
   badges?: Record<string, number>;
   notifications?: number;
@@ -219,7 +223,7 @@ interface LayoutProps {
 
 export function DashboardLayout({
   role, user, title, children, isClassTeacher, activeKey = "dashboard", badges = {}, notifications = 0,
-  schoolName = "Kyuso Boys Senior School", motto = "AIM HIGHER", onNavigate, onLogout, headerAction,
+  schoolName = "Stephen Kanja Senior School", motto = "AIM HIGHER", onNavigate, onLogout, headerAction,
 }: LayoutProps) {
   const [theme, setTheme] = useState<Theme>("light");
   const [open, setOpen] = useState(false);
@@ -231,6 +235,7 @@ export function DashboardLayout({
 
   return (
     <div className="ss-shell" data-theme={theme}>
+     
       <Sidebar menu={menu} activeKey={activeKey} badges={badges} open={open} onClose={() => setOpen(false)}
         onNavigate={go} schoolName={schoolName} motto={motto} />
       <div className="ss-main">
@@ -251,7 +256,7 @@ export function DashboardLayout({
   );
 }
 
-
+/* ---------- 4. HOI dashboard page ---------- */
 
 interface Approval { id: string; title: string; type: string; from: string; age: string; level: "Final" | "Escalated"; }
 interface AlertItem { id: string; text: string; tone: "danger" | "warn" | "info"; route: string; }
@@ -274,7 +279,7 @@ export interface HoiData {
   activity: Activity[];
 }
 
-
+/* Sample data - replace with API results */
 const SAMPLE: HoiData = {
   learners: 412, teachers: 26, classes: 9,
   attendanceToday: 94, collectionRate: 78, collected: "KES 6.1M", expected: "KES 7.8M",
@@ -356,6 +361,7 @@ function HoiDashboard({
       onLogout={onLogout}
       headerAction={{ label: "Approvals", icon: "check", onClick: () => go("/approvals", "approvals") }}
     >
+      {/* Hero */}
       <section className="ss-hero">
         <div className="ss-hero-text">
           <span className="ss-eyebrow">Head of Institution</span>
@@ -377,27 +383,28 @@ function HoiDashboard({
         </div>
       </section>
 
+      {/* KPI row */}
       <section className="ss-kpis" aria-label="Key indicators">
         <article className="ss-card ss-kpi">
-          <span className="ss-kpi-label">Attendance today</span>
+          <span className="ss-kpi-label"><Icon name="clipboard" size={15} /> Attendance today</span>
           <b>{data.attendanceToday}%</b>
           <div className="ss-bar"><i style={{ width: `${data.attendanceToday}%` }} /></div>
           <small>School-wide, all streams</small>
         </article>
         <article className="ss-card ss-kpi">
-          <span className="ss-kpi-label">Fee collection</span>
+          <span className="ss-kpi-label"><Icon name="wallet" size={15} /> Fee collection</span>
           <b>{data.collectionRate}%</b>
           <div className="ss-bar"><i className="gold" style={{ width: `${data.collectionRate}%` }} /></div>
           <small>{data.collected} of {data.expected} expected</small>
         </article>
         <article className="ss-card ss-kpi">
-          <span className="ss-kpi-label">Marks submitted</span>
+          <span className="ss-kpi-label"><Icon name="pen" size={15} /> Marks submitted</span>
           <b>{data.marksSubmittedPct}%</b>
           <div className="ss-bar"><i style={{ width: `${data.marksSubmittedPct}%` }} /></div>
           <small>Current assessment cycle</small>
         </article>
         <article className="ss-card ss-kpi">
-          <span className="ss-kpi-label">AI adoption</span>
+          <span className="ss-kpi-label"><Icon name="sparkles" size={15} /> AI adoption</span>
           <b>{data.aiAdoptionPct}%</b>
           <div className="ss-bar"><i className="gold" style={{ width: `${data.aiAdoptionPct}%` }} /></div>
           <small>Learners and teachers using AI tools</small>
@@ -440,7 +447,7 @@ function HoiDashboard({
         </article>
       </section>
 
-     
+      {/* Performance + activity */}
       <section className="ss-two">
         <article className="ss-card ss-panel">
           <header><h3>Performance by grade</h3></header>

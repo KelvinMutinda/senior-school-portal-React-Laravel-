@@ -1,4 +1,11 @@
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+
+/* ==========================================================================
+   HeaderSection - reusable top bar for every role (HOI, Deputy, Teacher,
+   Finance, ...). It has no role logic: the page decides the title, the
+   primary action and the user shown. Colours come from the CSS variables
+   defined on .ss-shell in HoiDashboard.tsx (with fallbacks below).
+   ========================================================================== */
 
 export type Theme = "light" | "dark";
 
@@ -16,11 +23,11 @@ export interface HeaderAction {
 
 export interface HeaderSectionProps {
   title: string;
-  subtitle?: string; 
+  subtitle?: string; // defaults to today's date
   user: HeaderUser;
   theme: Theme;
   onToggleTheme: () => void;
-  onMenuClick?: () => void; 
+  onMenuClick?: () => void; // opens the sidebar drawer on mobile
   primaryAction?: HeaderAction;
   notifications?: number;
   onNotificationsClick?: () => void;
@@ -30,7 +37,7 @@ export interface HeaderSectionProps {
   onLogout?: () => void;
 }
 
-
+/* ---------- Icons ---------- */
 
 const PATHS = {
   menu: "M3 6h18 M3 12h18 M3 18h18",
@@ -59,7 +66,7 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   );
 }
 
-
+/* ---------- Component ---------- */
 
 const initials = (name: string) =>
   name.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("");
@@ -172,5 +179,4 @@ function HeaderSection({
 }
 
 export default HeaderSection;
-
 
