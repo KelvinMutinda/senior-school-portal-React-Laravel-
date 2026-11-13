@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { DashboardLayout, type LayoutUser, type Role } from "../Hoi/HoiDashboard";
 
 /* ---------- Types ---------- */
 
@@ -58,6 +59,10 @@ type Errors = Record<string, string>;
 
 interface Props {
   onSubmit?: (data: LearnerForm) => void | Promise<void>;
+  role?: Role; // who is registering the learner (sidebar follows this role)
+  user?: LayoutUser;
+  onNavigate?: (route: string, key: string) => void;
+  onLogout?: () => void;
 }
 
 /* ---------- Constants ---------- */
@@ -115,6 +120,12 @@ const ELECTIVES: Record<Exclude<Pathway, "">, string[]> = {
 
 const RELATIONSHIPS = ["Mother", "Father", "Guardian", "Sibling", "Grandparent", "Uncle / Aunt", "Other"];
 const STREAMS = ["A", "B", "C", "D", "E", "F"];
+const ROLE_LABEL: Record<Role, string> = {
+  HOI: "Head of Institution",
+  DEPUTY: "Deputy",
+  TEACHER: "Teacher",
+  FINANCE: "Finance",
+};
 
 const phoneOk = (v: string) => /^(?:\+254|0)[17]\d{8}$/.test(v.replace(/\s/g, ""));
 const emailOk = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
@@ -134,7 +145,7 @@ function Field({ id, label, error, hint, children }: { id: string; label: string
 }
 
 
-function RegisterLearner({ onSubmit }: Props) {
+function RegisterLearner({ onSubmit, role = "HOI", user, onNavigate, onLogout }: Props) {
   const [form, setForm] = useState<LearnerForm>(initialForm);
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
@@ -239,174 +250,183 @@ function RegisterLearner({ onSubmit }: Props) {
   };
 
   return (
-    <div className="rl-page">
+    <DashboardLayout
+      role={role}
+      user={user ?? { name: "School Administrator", roleLabel: ROLE_LABEL[role] }}
+      title="Register Learner"
+      activeKey="students"
+      onNavigate={onNavigate}
+      onLogout={onLogout}
+    >
+      <div className="rl-page">
       
-      <header className="rl-head">
-        <h1>Register learner</h1>
-        <p>Add a new learner to the Senior School Portal. Fields marked * are required.</p>
-      </header>
+        <header className="rl-head">
+          <h1>Register learner</h1>
+          <p>Add a new learner to the Senior School Portal. Fields marked * are required.</p>
+        </header>
 
-      {done && <div className="rl-ok" role="status">{done}</div>}
+        {done && <div className="rl-ok" role="status">{done}</div>}
 
-      <form onSubmit={handleSubmit} noValidate>
+        <form onSubmit={handleSubmit} noValidate>
     
-        <section className="rl-card">
-          <h2>Learner details</h2>
-          <div className="rl-photo">
-            <div className="rl-avatar">{photoUrl ? <img src={photoUrl} alt="Selected learner" /> : <span>No photo</span>}</div>
-            <div>
-              <label htmlFor="photo" className="rl-btn">Upload photo</label>
-              <input id="photo" type="file" accept="image/*" hidden onChange={(e) => set("photo", e.target.files?.[0] ?? null)} />
-              <small>JPG or PNG, passport style.</small>
+          <section className="rl-card">
+            <h2>Learner details</h2>
+            <div className="rl-photo">
+              <div className="rl-avatar">{photoUrl ? <img src={photoUrl} alt="Selected learner" /> : <span>No photo</span>}</div>
+              <div>
+                <label htmlFor="photo" className="rl-btn">Upload photo</label>
+                <input id="photo" type="file" accept="image/*" hidden onChange={(e) => set("photo", e.target.files?.[0] ?? null)} />
+                <small>JPG or PNG, passport style.</small>
+              </div>
             </div>
-          </div>
-          <div className="rl-grid">
-            <Field id="firstName" label="First name *" error={errors.firstName}>
-              <input id="firstName" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} {...inv("firstName")} />
-            </Field>
-            <Field id="middleName" label="Middle name">
-              <input id="middleName" value={form.middleName} onChange={(e) => set("middleName", e.target.value)} />
-            </Field>
-            <Field id="surname" label="Surname *" error={errors.surname}>
-              <input id="surname" value={form.surname} onChange={(e) => set("surname", e.target.value)} {...inv("surname")} />
-            </Field>
-            <Field id="gender" label="Gender *" error={errors.gender}>
-              <select id="gender" value={form.gender} onChange={(e) => set("gender", e.target.value as Gender)} {...inv("gender")}>
-                <option value="">Select</option><option>Female</option><option>Male</option>
-              </select>
-            </Field>
-            <Field id="dob" label="Date of birth *" error={errors.dateOfBirth}>
-              <input id="dob" type="date" value={form.dateOfBirth} onChange={(e) => set("dateOfBirth", e.target.value)} {...inv("dateOfBirth")} />
-            </Field>
-            <Field id="nationality" label="Nationality">
-              <input id="nationality" value={form.nationality} onChange={(e) => set("nationality", e.target.value)} />
-            </Field>
-            <Field id="birthCert" label="Birth certificate number">
-              <input id="birthCert" value={form.birthCertNo} onChange={(e) => set("birthCertNo", e.target.value)} />
-            </Field>
-            <Field id="upi" label="UPI (NEMIS)" hint="Unique Personal Identifier from NEMIS">
-              <input id="upi" value={form.upi} onChange={(e) => set("upi", e.target.value)} />
-            </Field>
-          </div>
-        </section>
+            <div className="rl-grid">
+              <Field id="firstName" label="First name *" error={errors.firstName}>
+                <input id="firstName" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} {...inv("firstName")} />
+              </Field>
+              <Field id="middleName" label="Middle name">
+                <input id="middleName" value={form.middleName} onChange={(e) => set("middleName", e.target.value)} />
+              </Field>
+              <Field id="surname" label="Surname *" error={errors.surname}>
+                <input id="surname" value={form.surname} onChange={(e) => set("surname", e.target.value)} {...inv("surname")} />
+              </Field>
+              <Field id="gender" label="Gender *" error={errors.gender}>
+                <select id="gender" value={form.gender} onChange={(e) => set("gender", e.target.value as Gender)} {...inv("gender")}>
+                  <option value="">Select</option><option>Female</option><option>Male</option>
+                </select>
+              </Field>
+              <Field id="dob" label="Date of birth *" error={errors.dateOfBirth}>
+                <input id="dob" type="date" value={form.dateOfBirth} onChange={(e) => set("dateOfBirth", e.target.value)} {...inv("dateOfBirth")} />
+              </Field>
+              <Field id="nationality" label="Nationality">
+                <input id="nationality" value={form.nationality} onChange={(e) => set("nationality", e.target.value)} />
+              </Field>
+              <Field id="birthCert" label="Birth certificate number">
+                <input id="birthCert" value={form.birthCertNo} onChange={(e) => set("birthCertNo", e.target.value)} />
+              </Field>
+              <Field id="upi" label="UPI (NEMIS)" hint="Unique Personal Identifier from NEMIS">
+                <input id="upi" value={form.upi} onChange={(e) => set("upi", e.target.value)} />
+              </Field>
+            </div>
+          </section>
 
       
-        <section className="rl-card">
-          <h2>Admission and academics</h2>
-          <div className="rl-grid">
-            <Field id="admNo" label="Admission number *" error={errors.admissionNo}>
-              <input id="admNo" value={form.admissionNo} onChange={(e) => set("admissionNo", e.target.value)} {...inv("admissionNo")} />
-            </Field>
-            <Field id="admDate" label="Admission date *" error={errors.admissionDate}>
-              <input id="admDate" type="date" value={form.admissionDate} onChange={(e) => set("admissionDate", e.target.value)} {...inv("admissionDate")} />
-            </Field>
-            <Field id="grade" label="Grade *" error={errors.grade}>
-              <select id="grade" value={form.grade} onChange={(e) => set("grade", e.target.value as LearnerForm["grade"])} {...inv("grade")}>
-                <option value="">Select</option><option value="10">Grade 10</option><option value="11">Grade 11</option><option value="12">Grade 12</option>
-              </select>
-            </Field>
-            <Field id="stream" label="Stream *" error={errors.stream}>
-              <select id="stream" value={form.stream} onChange={(e) => set("stream", e.target.value)} {...inv("stream")}>
-                <option value="">Select</option>
-                {STREAMS.map((s) => <option key={s}>{s}</option>)}
-              </select>
-            </Field>
-            <Field id="pathway" label="Pathway *" error={errors.pathway}>
-              <select id="pathway" value={form.pathway} onChange={(e) => { set("pathway", e.target.value as Pathway); set("subjects", []); }} {...inv("pathway")}>
-                <option value="">Select</option><option>STEM</option><option>Social Sciences</option><option>Arts & Sports</option>
-              </select>
-            </Field>
-            <Field id="residence" label="Day or boarding *" error={errors.residence}>
-              <select id="residence" value={form.residence} onChange={(e) => set("residence", e.target.value as Residence)} {...inv("residence")}>
-                <option value="">Select</option><option>Day</option><option>Boarding</option>
-              </select>
-            </Field>
-            <Field id="prevSchool" label="Previous (junior) school">
-              <input id="prevSchool" value={form.previousSchool} onChange={(e) => set("previousSchool", e.target.value)} />
-            </Field>
-            <Field id="kjsea" label="KJSEA index number">
-              <input id="kjsea" value={form.kjseaIndexNo} onChange={(e) => set("kjseaIndexNo", e.target.value)} />
-            </Field>
-            <Field id="kjseaPerf" label="KJSEA performance summary">
-              <input id="kjseaPerf" placeholder="e.g. Meeting expectations" value={form.kjseaPerformance} onChange={(e) => set("kjseaPerformance", e.target.value)} />
-            </Field>
-          </div>
+          <section className="rl-card">
+            <h2>Admission and academics</h2>
+            <div className="rl-grid">
+              <Field id="admNo" label="Admission number *" error={errors.admissionNo}>
+                <input id="admNo" value={form.admissionNo} onChange={(e) => set("admissionNo", e.target.value)} {...inv("admissionNo")} />
+              </Field>
+              <Field id="admDate" label="Admission date *" error={errors.admissionDate}>
+                <input id="admDate" type="date" value={form.admissionDate} onChange={(e) => set("admissionDate", e.target.value)} {...inv("admissionDate")} />
+              </Field>
+              <Field id="grade" label="Grade *" error={errors.grade}>
+                <select id="grade" value={form.grade} onChange={(e) => set("grade", e.target.value as LearnerForm["grade"])} {...inv("grade")}>
+                  <option value="">Select</option><option value="10">Grade 10</option><option value="11">Grade 11</option><option value="12">Grade 12</option>
+                </select>
+              </Field>
+              <Field id="stream" label="Stream *" error={errors.stream}>
+                <select id="stream" value={form.stream} onChange={(e) => set("stream", e.target.value)} {...inv("stream")}>
+                  <option value="">Select</option>
+                  {STREAMS.map((s) => <option key={s}>{s}</option>)}
+                </select>
+              </Field>
+              <Field id="pathway" label="Pathway *" error={errors.pathway}>
+                <select id="pathway" value={form.pathway} onChange={(e) => { set("pathway", e.target.value as Pathway); set("subjects", []); }} {...inv("pathway")}>
+                  <option value="">Select</option><option>STEM</option><option>Social Sciences</option><option>Arts & Sports</option>
+                </select>
+              </Field>
+              <Field id="residence" label="Day or boarding *" error={errors.residence}>
+                <select id="residence" value={form.residence} onChange={(e) => set("residence", e.target.value as Residence)} {...inv("residence")}>
+                  <option value="">Select</option><option>Day</option><option>Boarding</option>
+                </select>
+              </Field>
+              <Field id="prevSchool" label="Previous (junior) school">
+                <input id="prevSchool" value={form.previousSchool} onChange={(e) => set("previousSchool", e.target.value)} />
+              </Field>
+              <Field id="kjsea" label="KJSEA index number">
+                <input id="kjsea" value={form.kjseaIndexNo} onChange={(e) => set("kjseaIndexNo", e.target.value)} />
+              </Field>
+              <Field id="kjseaPerf" label="KJSEA performance summary">
+                <input id="kjseaPerf" placeholder="e.g. Meeting expectations" value={form.kjseaPerformance} onChange={(e) => set("kjseaPerformance", e.target.value)} />
+              </Field>
+            </div>
 
-          <fieldset className="rl-subjects" {...(errors.subjects ? { "data-invalid": "true", tabIndex: -1 } : {})}>
-            <legend>Subjects</legend>
-            <p className="rl-note">Compulsory: {COMPULSORY.join(", ")}.</p>
-            {form.pathway ? (
-              <div className="rl-checks">
-                {ELECTIVES[form.pathway].map((s) => (
-                  <label key={s} className="rl-check">
-                    <input type="checkbox" checked={form.subjects.includes(s)} onChange={() => toggleSubject(s)} />
-                    {s}
-                  </label>
-                ))}
-              </div>
-            ) : (
-              <p className="rl-note">Choose a pathway to see its elective subjects.</p>
-            )}
-            {errors.subjects && <small className="rl-err" role="alert">{errors.subjects}</small>}
-          </fieldset>
-        </section>
+            <fieldset className="rl-subjects" {...(errors.subjects ? { "data-invalid": "true", tabIndex: -1 } : {})}>
+              <legend>Subjects</legend>
+              <p className="rl-note">Compulsory: {COMPULSORY.join(", ")}.</p>
+              {form.pathway ? (
+                <div className="rl-checks">
+                  {ELECTIVES[form.pathway].map((s) => (
+                    <label key={s} className="rl-check">
+                      <input type="checkbox" checked={form.subjects.includes(s)} onChange={() => toggleSubject(s)} />
+                      {s}
+                    </label>
+                  ))}
+                </div>
+              ) : (
+                <p className="rl-note">Choose a pathway to see its elective subjects.</p>
+              )}
+              {errors.subjects && <small className="rl-err" role="alert">{errors.subjects}</small>}
+            </fieldset>
+          </section>
 
         
-        <section className="rl-card">
-          <h2>Primary parent / guardian</h2>
-          {guardianFields("primaryGuardian", "pg", true)}
-        </section>
-        <section className="rl-card">
-          <h2>Second parent / guardian <span className="rl-opt">optional</span></h2>
-          {guardianFields("secondaryGuardian", "sg", false)}
-        </section>
+          <section className="rl-card">
+            <h2>Primary parent / guardian</h2>
+            {guardianFields("primaryGuardian", "pg", true)}
+          </section>
+          <section className="rl-card">
+            <h2>Second parent / guardian <span className="rl-opt">optional</span></h2>
+            {guardianFields("secondaryGuardian", "sg", false)}
+          </section>
 
        
-        <section className="rl-card">
-          <h2>Health and emergency contact</h2>
-          <div className="rl-grid">
-            <Field id="emName" label="Emergency contact name *" error={errors.emergencyName}>
-              <input id="emName" value={form.emergencyName} onChange={(e) => set("emergencyName", e.target.value)} {...inv("emergencyName")} />
-            </Field>
-            <Field id="emPhone" label="Emergency contact phone *" error={errors.emergencyPhone}>
-              <input id="emPhone" type="tel" value={form.emergencyPhone} onChange={(e) => set("emergencyPhone", e.target.value)} {...inv("emergencyPhone")} />
-            </Field>
-            <Field id="medical" label="Medical conditions">
-              <textarea id="medical" rows={3} value={form.medicalConditions} onChange={(e) => set("medicalConditions", e.target.value)} />
-            </Field>
-            <Field id="allergies" label="Allergies">
-              <textarea id="allergies" rows={3} value={form.allergies} onChange={(e) => set("allergies", e.target.value)} />
-            </Field>
-            <Field id="needs" label="Special needs or learning support">
-              <textarea id="needs" rows={3} value={form.specialNeeds} onChange={(e) => set("specialNeeds", e.target.value)} />
-            </Field>
+          <section className="rl-card">
+            <h2>Health and emergency contact</h2>
+            <div className="rl-grid">
+              <Field id="emName" label="Emergency contact name *" error={errors.emergencyName}>
+                <input id="emName" value={form.emergencyName} onChange={(e) => set("emergencyName", e.target.value)} {...inv("emergencyName")} />
+              </Field>
+              <Field id="emPhone" label="Emergency contact phone *" error={errors.emergencyPhone}>
+                <input id="emPhone" type="tel" value={form.emergencyPhone} onChange={(e) => set("emergencyPhone", e.target.value)} {...inv("emergencyPhone")} />
+              </Field>
+              <Field id="medical" label="Medical conditions">
+                <textarea id="medical" rows={3} value={form.medicalConditions} onChange={(e) => set("medicalConditions", e.target.value)} />
+              </Field>
+              <Field id="allergies" label="Allergies">
+                <textarea id="allergies" rows={3} value={form.allergies} onChange={(e) => set("allergies", e.target.value)} />
+              </Field>
+              <Field id="needs" label="Special needs or learning support">
+                <textarea id="needs" rows={3} value={form.specialNeeds} onChange={(e) => set("specialNeeds", e.target.value)} />
+              </Field>
+            </div>
+          </section>
+
+          {/* 5. Consent */}
+          <section className="rl-card">
+            <h2>Consent</h2>
+            <label className="rl-check">
+              <input type="checkbox" checked={form.consentDataUse} onChange={(e) => set("consentDataUse", e.target.checked)} {...inv("consentDataUse")} />
+              The parent or guardian agrees that the school may collect and use this learner's data for school administration. *
+            </label>
+            {errors.consentDataUse && <small className="rl-err" role="alert">{errors.consentDataUse}</small>}
+            <label className="rl-check">
+              <input type="checkbox" checked={form.consentAi} onChange={(e) => set("consentAi", e.target.checked)} />
+              The learner may use the AI Tutor, career guidance and study plan tools. Teachers can review AI output.
+            </label>
+            <label className="rl-check">
+              <input type="checkbox" checked={form.consentPhoto} onChange={(e) => set("consentPhoto", e.target.checked)} />
+              The school may use the learner's photo on the portal and ID card.
+            </label>
+          </section>
+
+          <div className="rl-actions">
+            <button type="button" className="rl-btn" onClick={() => { setForm(initialForm); setErrors({}); setDone(null); }}>Clear form</button>
+            <button type="submit" className="rl-btn rl-primary" disabled={saving}>{saving ? "Saving…" : "Register learner"}</button>
           </div>
-        </section>
-
-        {/* 5. Consent */}
-        <section className="rl-card">
-          <h2>Consent</h2>
-          <label className="rl-check">
-            <input type="checkbox" checked={form.consentDataUse} onChange={(e) => set("consentDataUse", e.target.checked)} {...inv("consentDataUse")} />
-            The parent or guardian agrees that the school may collect and use this learner's data for school administration. *
-          </label>
-          {errors.consentDataUse && <small className="rl-err" role="alert">{errors.consentDataUse}</small>}
-          <label className="rl-check">
-            <input type="checkbox" checked={form.consentAi} onChange={(e) => set("consentAi", e.target.checked)} />
-            The learner may use the AI Tutor, career guidance and study plan tools. Teachers can review AI output.
-          </label>
-          <label className="rl-check">
-            <input type="checkbox" checked={form.consentPhoto} onChange={(e) => set("consentPhoto", e.target.checked)} />
-            The school may use the learner's photo on the portal and ID card.
-          </label>
-        </section>
-
-        <div className="rl-actions">
-          <button type="button" className="rl-btn" onClick={() => { setForm(initialForm); setErrors({}); setDone(null); }}>Clear form</button>
-          <button type="submit" className="rl-btn rl-primary" disabled={saving}>{saving ? "Saving…" : "Register learner"}</button>
-        </div>
-      </form>
-    </div>
+        </form>
+      </div>
+    </DashboardLayout>
   );
 }
 

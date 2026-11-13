@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from "react";
-import HeaderSection, { type Theme } from "../components/HeaderSection";
-
+import HeaderSection, { type Theme, type HeaderAction } from "../components/HeaderSection";
 
 
 export type Role = "HOI" | "DEPUTY" | "TEACHER" | "FINANCE";
@@ -218,7 +217,7 @@ interface LayoutProps {
   motto?: string;
   onNavigate?: (route: string, key: string) => void;
   onLogout?: () => void;
-  headerAction?: { label: string; onClick: () => void; icon?: IconName };
+  headerAction?: HeaderAction;
 }
 
 export function DashboardLayout({
@@ -235,7 +234,6 @@ export function DashboardLayout({
 
   return (
     <div className="ss-shell" data-theme={theme}>
-     
       <Sidebar menu={menu} activeKey={activeKey} badges={badges} open={open} onClose={() => setOpen(false)}
         onNavigate={go} schoolName={schoolName} motto={motto} />
       <div className="ss-main">
@@ -524,4 +522,3 @@ function HoiDashboard({
 }
 
 export default HoiDashboard;
-
