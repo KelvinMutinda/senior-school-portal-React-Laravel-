@@ -8,6 +8,8 @@ import TeacherDashboard from './Teachers/TeacherDashboard'
 import FinanceDashboard from './Finance/FinanceDashboard'
 import LearnerDashboard from './Student/LearnerDashboard'
 import AddSubject from './components/subjects'
+import ViewResults from './components/viewResults'
+import UploadResults from './components/uploadResults'
 
 function App() {
 
@@ -19,7 +21,9 @@ function App() {
         <Route path="Teacher/Dashboard" element={<TeacherDashboard/>}/>
         <Route path="Learner/Dashboard" element={<LearnerDashboard/>}/>
         <Route path="Finances/Dashboard" element={<FinanceDashboard/>}/>
-        <Route path="add/subjetcs" element={<AddSubject/>}/>
+        <Route path="add/Subjects" element={<AddSubject/>}/>
+        <Route path="Results/Upload/Results" element={<UploadResults/>}/>
+        <Route path="Results/View/Results" element={<ViewResults/>}/>
     </Routes>
   )
 }
