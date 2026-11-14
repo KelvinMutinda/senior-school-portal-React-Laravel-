@@ -7,6 +7,7 @@ import HoiDashboard from './Hoi/HoiDashboard'
 import TeacherDashboard from './Teachers/TeacherDashboard'
 import FinanceDashboard from './Finance/FinanceDashboard'
 import LearnerDashboard from './Student/LearnerDashboard'
+import AddSubject from './components/subjects'
 
 function App() {
 
@@ -18,6 +19,7 @@ function App() {
         <Route path="Teacher/Dashboard" element={<TeacherDashboard/>}/>
         <Route path="Learner/Dashboard" element={<LearnerDashboard/>}/>
         <Route path="Finances/Dashboard" element={<FinanceDashboard/>}/>
+        <Route path="add/subjetcs" element={<AddSubject/>}/>
     </Routes>
   )
 }
