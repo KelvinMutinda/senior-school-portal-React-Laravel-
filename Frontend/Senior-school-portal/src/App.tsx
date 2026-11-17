@@ -19,8 +19,8 @@ import Timetable from './Student/Timetable'
 import PayFees from './Student/Finance/PayFees'
 import FeeStructure from './Student/Finance/FeeStructure'
 import FeeStatements from './Student/Finance/FeeStatements'
-import PathwayRecommender from './Student/CareerPathways.tsx/PathwayRecommender'
-import Pathways from './Student/CareerPathways.tsx/Pathways'
+import PathwayRecommender from './Student/CareerPathways/PathwayRecommender'
+import Pathways from './Student/CareerPathways/Pathways'
 
 
 function App() {
@@ -41,10 +41,10 @@ function App() {
         <Route path="Academic/LearningMaterials" element={<LearningMaterials/>}/>
         <Route path="Academic/Timetable" element={<Timetable/>}/>
         <Route path="Finance/PayFees" element={<PayFees/>}/>
-        <Route path="Finance/Fee/Structure" element={<FeeStructure/>}/>
-        <Route path="Finance/Fee/statement" element={<FeeStatements/>}/>
-         <Route path="CareerPathways" element={<PathwayRecommender/>}/>
-          <Route path="Explore/Pathways" element={<Pathways/>}/>
+        <Route path="/Finance/Fee/Structure" element={<FeeStructure/>}/>
+        <Route path="/Finance/Fee/statement" element={<FeeStatements/>}/>
+         <Route path="/CareerPathways" element={<PathwayRecommender/>}/>
+          <Route path="/Explore/Pathways" element={<Pathways/>}/>
         <Route path="/AI/Chat" element={<AiTutorPage/>}/>
         <Route path="/Students" element={<Students/>}/>
     </Routes>
