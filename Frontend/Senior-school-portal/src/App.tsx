@@ -38,7 +38,7 @@ function App() {
         <Route path="Results/View/Results" element={<ViewResults/>}/>
         <Route path="/auth/Login" element={<Login/>}/>
         <Route path="Academics/Results" element={<AcademicResults/>}/>
-        <Route path="Academic/LearningMaterials" element={<LearningMaterials/>}/>
+        <Route path="/Academic/LearningMaterials" element={<LearningMaterials/>}/>
         <Route path="Academic/Timetable" element={<Timetable/>}/>
         <Route path="Finance/PayFees" element={<PayFees/>}/>
         <Route path="/Finance/Fee/Structure" element={<FeeStructure/>}/>
