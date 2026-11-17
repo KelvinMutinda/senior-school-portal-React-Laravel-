@@ -1,8 +1,10 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
+import { Link, useNavigate } from "react-router-dom";
 
-/* Styles live in the shared portal stylesheet (section "Learner dashboard
-   additions"). Import that stylesheet once at the app root. */
+/* Styles live in the shared portal stylesheet (section 6 "Learner dashboard
+   additions" and section 13 "Learner portal pages"). Import that stylesheet
+   once at the app root. */
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -10,30 +12,25 @@ import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 
 export interface SubjectScore {
   subject: string;
-  /** Short subject code shown in the results table. Falls back to the first letters of the subject. */
   code?: string;
-  /** The learner's score, out of 100. */
   score: number;
-  /** Average of the learner's stream for this subject. */
   stream: number;
-  /** Average of the whole grade for this subject. */
   grade: number;
 }
 
 export interface ExamRecord {
   id: string;
   name: string;
-  /** Short label for chart and heatmap axes, e.g. "T3 Mid". */
   short: string;
   term: string;
-  /** ISO date, e.g. "2026-10-30". */
+  /** Exam type for filtering, e.g. "Opener", "CAT", "Mid-term", "End of term". Worked out from the name when left out. */
+  type?: string;
   date: string;
   scores: SubjectScore[];
   streamPosition: number;
   streamSize: number;
   gradePosition: number;
   gradeSize: number;
-  /** If set, the report card button becomes a real PDF download link. */
   reportUrl?: string;
 }
 
@@ -46,7 +43,6 @@ export interface Material {
   kind: MaterialKind;
   sizeLabel: string;
   addedLabel: string;
-  /** If set, the button becomes a real PDF download link. */
   url?: string;
 }
 
@@ -58,14 +54,12 @@ export interface FeeLine {
 export interface FeeTerm {
   term: string;
   dueLabel: string;
-  /** Amount of this term's balance that is past its due date. */
   overdue: number;
   lines: FeeLine[];
 }
 
 export interface FeePayment {
   id: string;
-  /** ISO date. */
   date: string;
   reference: string;
   method: string;
@@ -113,12 +107,35 @@ export interface PathItem {
 export interface CareerPathway {
   id: string;
   title: string;
-  /** How well the pathway fits the learner, 0 to 100. */
   match: number;
-  /** One plain sentence on why this pathway was suggested. */
   why: string;
-  /** Subjects the pathway builds on. */
   subjects: string[];
+  /** Example careers shown in the pathway explorer. */
+  examples?: string[];
+}
+
+export interface TimetableEntry {
+  id: string;
+  /** "Mon" to "Fri". */
+  day: string;
+  /** 24-hour time, e.g. "08:00". */
+  start: string;
+  end: string;
+  subject: string;
+  room?: string;
+  teacher?: string;
+  kind?: "lesson" | "break";
+}
+
+export interface LearnerProfile {
+  admissionNo?: string;
+  gender?: string;
+  /** ISO date. */
+  dob?: string;
+  pathway?: string;
+  guardian?: string;
+  guardianPhone?: string;
+  email?: string;
 }
 
 export type TutorMode = "teach" | "practice" | "revise";
@@ -129,19 +146,29 @@ export interface TutorRequest {
   mode: TutorMode;
 }
 
-export type DownloadKind = "material" | "report-card" | "receipt" | "fee-structure";
+export type PayMethod = "M-Pesa" | "Bank transfer" | "Card";
+
+export interface PayFeesRequest {
+  term: string;
+  amount: number;
+  method: PayMethod;
+  /** Only for M-Pesa. */
+  phone?: string;
+}
+
+export type DownloadKind = "material" | "report-card" | "receipt" | "fee-structure" | "fee-statement";
 
 export interface LearnerDashboardData {
   learner: { firstName: string; fullName: string; classLabel: string };
+  profile?: LearnerProfile;
   termLabel: string;
   dateLabel: string;
   attendance: { percent: number; present: number; total: number };
-  /** All exams, in any order. The dashboard sorts them. */
   exams: ExamRecord[];
   materials: Material[];
+  timetable: TimetableEntry[];
   fees: {
     currency: string;
-    /** Must match one FeeTerm.term. Opens first in the structure tab. */
     currentTerm: string;
     structure: FeeTerm[];
     payments: FeePayment[];
@@ -155,30 +182,44 @@ export interface LearnerDashboardData {
   topics: Topic[];
   tasks: StudyTask[];
   notices: Notice[];
-  badges: { messages: number; announcements: number };
 }
+
+/** Every page in the sidebar. Each one is a real route, see PAGE_PATHS. */
+export type PageKey =
+  | "home"
+  | "profile"
+  | "academic-transcript"
+  | "academic-dashboard"
+  | "fees-pay"
+  | "fees-structure"
+  | "fees-statement"
+  | "timetable"
+  | "career-recommender"
+  | "career-explorer"
+  | "materials"
+  | "announcements"
+  | "ai";
 
 export interface LearnerDashboardProps {
   data?: LearnerDashboardData;
   theme?: "light" | "dark";
+  /** Which page to show. Each route in App.tsx passes its own. */
+  page?: PageKey;
+  /** School crest shown in the sidebar instead of the "SP" mark. */
+  logoSrc?: string;
   /**
-   * Called for links to other pages and for action buttons, with a key such as
-   * "profile", "timetable", "messages", "privacy", "fees", "fees-structure",
-   * "fees-invoices", "fees-query", "chat", "chat-<id>", "tutor-resume",
-   * "tutor-saved", "career-recommender", "career-pathways", "career-profile",
-   * "career-pathway-<id>" or a topic key. In-page sections scroll without calling this.
+   * Called for things that live outside the sidebar pages, such as "privacy",
+   * "fees-query", a topic key, "chat-<id>", "tutor-resume" or "tutor-saved".
+   * Moves between the sidebar pages are real route changes handled inside.
    */
   onNavigate?: (key: string) => void;
-  /** Called when a study task is ticked or unticked, so you can persist it. */
   onTaskToggle?: (id: string, done: boolean) => void;
-  /** Called when the learner sends a message in AI Chat. */
   onAskChat?: (question: string) => void;
-  /** Called when the learner starts a lesson with the AI Tutor. */
   onStartTutor?: (request: TutorRequest) => void;
-  /**
-   * Called for download buttons that have no direct url. id is the material id,
-   * exam id (or "all"), payment id or term name, depending on kind.
-   */
+  /** Called when the learner submits the Pay fees form. */
+  onPayFees?: (request: PayFeesRequest) => void;
+  /** Called when a notice is marked as read. */
+  onNoticeRead?: (id: string) => void;
   onDownload?: (kind: DownloadKind, id: string) => void;
 }
 
@@ -188,7 +229,6 @@ export interface LearnerDashboardProps {
 
 const SUBJECTS = ["Mathematics", "English", "Kiswahili", "Biology", "Chemistry", "Physics"];
 const CODES = ["MATH", "ENG", "KISW", "BIO", "CHEM", "PHYS"];
-/* Sample only: how far the stream and grade averages sit below the learner. */
 const STREAM_GAP = [3, -2, 4, -1, 2, -3];
 const GRADE_GAP = [6, 1, 7, 2, 5, 0];
 
@@ -231,10 +271,57 @@ const FEE_LINES: FeeLine[] = [
   { name: "Medical and insurance", amount: 1000 },
 ];
 
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri"];
+const LESSON_TIMES: [string, string][] = [
+  ["08:00", "08:40"],
+  ["08:40", "09:20"],
+  ["09:20", "10:00"],
+  ["10:30", "11:10"],
+  ["11:10", "11:50"],
+  ["11:50", "12:30"],
+  ["14:00", "14:40"],
+  ["14:40", "15:20"],
+];
+/* Index into TT_NAMES for each lesson of each day. */
+const TT_PLAN = [
+  [0, 1, 5, 3, 2, 4, 0, 6],
+  [5, 0, 1, 4, 3, 2, 5, 6],
+  [2, 4, 0, 1, 5, 3, 1, 6],
+  [3, 5, 4, 0, 1, 2, 4, 0],
+  [1, 2, 3, 5, 0, 4, 3, 6],
+];
+const TT_NAMES = [...SUBJECTS, "Games and clubs"];
+const TT_TEACHERS = ["Mr. Kamau", "Ms. Wanjiru", "Mr. Mwangi", "Ms. Achieng", "Mr. Kiprop", "Ms. Njoki", "Games staff"];
+const TT_ROOMS = ["Room 4", "Room 2", "Room 6", "Lab 1", "Lab 2", "Lab 3", "Field"];
+
+const SAMPLE_TIMETABLE: TimetableEntry[] = DAYS.flatMap((day, d) => [
+  ...TT_PLAN[d].map((s, i) => ({
+    id: `${day}-${i}`,
+    day,
+    start: LESSON_TIMES[i][0],
+    end: LESSON_TIMES[i][1],
+    subject: TT_NAMES[s],
+    room: TT_ROOMS[s],
+    teacher: TT_TEACHERS[s],
+    kind: "lesson" as const,
+  })),
+  { id: `${day}-tea`, day, start: "10:00", end: "10:30", subject: "Tea break", kind: "break" as const },
+  { id: `${day}-lunch`, day, start: "12:30", end: "14:00", subject: "Lunch break", kind: "break" as const },
+]);
+
 export const SAMPLE_DATA: LearnerDashboardData = {
   learner: { firstName: "Grace", fullName: "Grace Njeri", classLabel: "Grade 10 · East stream" },
+  profile: {
+    admissionNo: "SS-2026-0187",
+    gender: "Female",
+    dob: "2010-05-14",
+    pathway: "STEM",
+    guardian: "Mrs. Wanjiru Njeri",
+    guardianPhone: "0712 345 678",
+    email: "grace.njeri@example.com",
+  },
   termLabel: "Term 3, 2026",
-  dateLabel: "Sunday 15 November 2026",
+  dateLabel: "Tuesday 17 November 2026",
   attendance: { percent: 94, present: 47, total: 50 },
   exams: [
     sampleExam(0, "e1", "Term 1 Opener exam", "T1 Opener", "Term 1, 2026", "2026-02-20", [64, 63, 72, 60, 56, 64], 11, 58),
@@ -254,6 +341,7 @@ export const SAMPLE_DATA: LearnerDashboardData = {
     { id: "m7", subject: "English", title: "Summary writing, step by step", kind: "Notes", sizeLabel: "760 KB", addedLabel: "Added 20 Oct" },
     { id: "m8", subject: "Kiswahili", title: "Insha na ufahamu: revision pack", kind: "Revision pack", sizeLabel: "1.1 MB", addedLabel: "Added 14 Oct" },
   ],
+  timetable: SAMPLE_TIMETABLE,
   fees: {
     currency: "KES",
     currentTerm: "Term 3",
@@ -300,6 +388,7 @@ export const SAMPLE_DATA: LearnerDashboardData = {
         match: 88,
         why: "Fits your Mathematics results and your interest in solving problems step by step.",
         subjects: ["Mathematics", "Physics"],
+        examples: ["Software developer", "Data analyst", "Cybersecurity analyst"],
       },
       {
         id: "civil-engineering",
@@ -307,6 +396,7 @@ export const SAMPLE_DATA: LearnerDashboardData = {
         match: 81,
         why: "Builds on Mathematics and Physics, and your interest in designing things that last.",
         subjects: ["Mathematics", "Physics"],
+        examples: ["Structural engineer", "Quantity surveyor", "Urban planner"],
       },
       {
         id: "biomedical-science",
@@ -314,6 +404,23 @@ export const SAMPLE_DATA: LearnerDashboardData = {
         match: 74,
         why: "Matches your interest in how the body works. Biology topics are a good place to build up first.",
         subjects: ["Biology", "Chemistry"],
+        examples: ["Laboratory scientist", "Pharmacist", "Medical researcher"],
+      },
+      {
+        id: "medicine-health",
+        title: "Medicine and health",
+        match: 69,
+        why: "Your Biology and Chemistry marks are a base to build on. Chemistry is the subject to strengthen most.",
+        subjects: ["Biology", "Chemistry"],
+        examples: ["Doctor", "Nurse", "Public health officer"],
+      },
+      {
+        id: "teaching",
+        title: "Teaching and education",
+        match: 66,
+        why: "Fits your strong Kiswahili and English results and the way you explain ideas to others.",
+        subjects: ["English", "Kiswahili"],
+        examples: ["Secondary school teacher", "Curriculum developer", "Education officer"],
       },
     ],
   },
@@ -335,7 +442,6 @@ export const SAMPLE_DATA: LearnerDashboardData = {
     { id: "n2", tag: "Class", title: "Physics practical on Wednesday: bring your lab coat", meta: "Class teacher, Grade 10 East · 13 November", unread: true },
     { id: "n3", tag: "Finance", title: "Term 3 fee balance is due on 28 November", meta: "Finance office · 10 November", unread: false },
   ],
-  badges: { messages: 2, announcements: 2 },
 };
 
 /* ------------------------------------------------------------------ */
@@ -343,13 +449,13 @@ export const SAMPLE_DATA: LearnerDashboardData = {
 /* ------------------------------------------------------------------ */
 
 const fmt = (n: number) => n.toLocaleString("en-KE");
-const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
-const avg = (xs: number[]) => (xs.length ? sum(xs) / xs.length : 0);
+export const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+export const avg = (xs: number[]) => (xs.length ? sum(xs) / xs.length : 0);
 
-const fmtDate = (iso: string) =>
+export const fmtDate = (iso: string) =>
   new Date(`${iso}T00:00:00`).toLocaleDateString("en-KE", { day: "numeric", month: "short", year: "numeric" });
 
-function ordinal(n: number) {
+export function ordinal(n: number) {
   const v = n % 100;
   if (v >= 11 && v <= 13) return `${n}th`;
   const suffix = ({ 1: "st", 2: "nd", 3: "rd" } as Record<number, string>)[n % 10] ?? "th";
@@ -363,15 +469,13 @@ const greeting = () => {
 
 type Kind = "up" | "down" | "flat";
 
-/** Change between two averages, e.g. "Up 2.4 pts". */
-function change(d: number, unit = ""): { kind: Kind; label: string } {
+export function change(d: number, unit = ""): { kind: Kind; label: string } {
   const r = Math.round(d * 10) / 10;
   if (r > 0) return { kind: "up", label: `Up ${r}${unit}` };
   if (r < 0) return { kind: "down", label: `Down ${Math.abs(r)}${unit}` };
   return { kind: "flat", label: "No change" };
 }
 
-/** Gap to a benchmark, e.g. "3 above". */
 function gap(d: number): { kind: Kind; label: string } {
   const r = Math.round(d);
   if (r > 0) return { kind: "up", label: `${r} above` };
@@ -391,23 +495,22 @@ const BANDS = [
   { min: 11, label: "BE1" },
   { min: 0, label: "BE2" },
 ];
-const bandFor = (n: number) => (BANDS.find((b) => n >= b.min) ?? BANDS[BANDS.length - 1]).label;
+export const bandFor = (n: number) => (BANDS.find((b) => n >= b.min) ?? BANDS[BANDS.length - 1]).label;
 const heatLevel = (n: number) => (n >= 90 ? 5 : n >= 75 ? 4 : n >= 58 ? 3 : n >= 41 ? 2 : 1);
 
-interface ExamStat {
+export interface ExamStat {
   exam: ExamRecord;
   me: number;
   stream: number;
   grade: number;
 }
 
-interface Progress {
-  /** Oldest first. */
+export interface Progress {
   stats: ExamStat[];
   subjects: string[];
 }
 
-function buildProgress(exams: ExamRecord[]): Progress {
+export function buildProgress(exams: ExamRecord[]): Progress {
   const chrono = [...exams].sort((a, b) => a.date.localeCompare(b.date));
   const stats = chrono.map((exam) => ({
     exam,
@@ -457,55 +560,157 @@ function buildFeeSummary(fees: LearnerDashboardData["fees"]): FeeSummary {
 }
 
 /* ------------------------------------------------------------------ */
-/* Icons                                                               */
+/* Pages and navigation                                                */
 /* ------------------------------------------------------------------ */
 
+/** The AI assistant's name, used in the sidebar and on its page. */
+const AI_NAME = "Mwalimu AI";
+
 type IconName =
-  | "dashboard"
+  | "search"
+  | "bolt"
+  | "home"
   | "profile"
-  | "progress"
-  | "heatmap"
   | "exams"
-  | "plan"
-  | "timetable"
-  | "materials"
-  | "download"
-  | "structure"
+  | "progress"
   | "payments"
+  | "structure"
   | "balance"
-  | "receipt"
-  | "analysis"
-  | "chat"
-  | "tutor"
+  | "timetable"
   | "career"
   | "pathways"
-  | "messages"
+  | "materials"
   | "announcements"
-  | "privacy"
+  | "sparkle"
+  | "tutor"
+  | "download"
   | "menu"
   | "close";
 
+interface PageMeta {
+  label: string;
+  title: string;
+  note: string;
+  icon: IconName;
+}
+
+const PAGES: Record<PageKey, PageMeta> = {
+  home: { label: "Dashboard", title: "Learner Dashboard", note: "", icon: "home" },
+  profile: { label: "Profile", title: "My profile", note: "Your details as the school has them on record.", icon: "profile" },
+  "academic-transcript": {
+    label: "Academic transcript",
+    title: "Academic transcript",
+    note: "Every exam result in one statement, with report cards you can download.",
+    icon: "exams",
+  },
+  "academic-dashboard": {
+    label: "Academic dashboard",
+    title: "Academic dashboard",
+    note: "How you are doing, and how that compares with your stream and your grade.",
+    icon: "progress",
+  },
+  "fees-pay": { label: "Pay fees", title: "Pay fees", note: "Pay a term's balance in a few steps.", icon: "payments" },
+  "fees-structure": {
+    label: "Fee structure",
+    title: "Fee structure",
+    note: "What each term costs, item by item, and when it is due.",
+    icon: "structure",
+  },
+  "fees-statement": {
+    label: "Fees statement and balances",
+    title: "Fees statement and balances",
+    note: "Your balances, payment statement, receipts and a summary of how you have paid.",
+    icon: "balance",
+  },
+  timetable: { label: "Timetable", title: "Timetable", note: "Your weekly lessons, breaks and rooms.", icon: "timetable" },
+  "career-recommender": {
+    label: "Pathway recommender",
+    title: "Pathway recommender",
+    note: "Ideas for what to study next, based on your results and interests.",
+    icon: "career",
+  },
+  "career-explorer": {
+    label: "Pathways explorer",
+    title: "Pathways explorer",
+    note: "Browse every pathway and see the careers it can lead to.",
+    icon: "pathways",
+  },
+  materials: {
+    label: "Learning materials",
+    title: "Learning materials",
+    note: "Download notes, past papers, worksheets and revision packs as PDFs.",
+    icon: "materials",
+  },
+  announcements: {
+    label: "Announcements",
+    title: "Announcements",
+    note: "News from the school, your class teacher and the finance office.",
+    icon: "announcements",
+  },
+  ai: {
+    label: AI_NAME,
+    title: AI_NAME,
+    note: "Ask quick questions in Chat, or learn a topic step by step with the Tutor.",
+    icon: "sparkle",
+  },
+};
+
+/** Route of each page. These match the <Route path> values in App.tsx. */
+export const PAGE_PATHS: Record<PageKey, string> = {
+  home: "/Learner/Dashboard",
+  profile: "/Learner/Profile",
+  "academic-transcript": "/Academics/Results",
+  "academic-dashboard": "/Academics/Dashboard",
+  "fees-pay": "/Finance/PayFees",
+  "fees-structure": "/Finance/Fee/Structure",
+  "fees-statement": "/Finance/Fee/statement",
+  timetable: "/Academic/Timetable",
+  "career-recommender": "/CareerPathways",
+  "career-explorer": "/Explore/Pathways",
+  materials: "/Academic/LearningMaterials",
+  announcements: "/Learner/Announcements",
+  ai: "/AI/Chat",
+};
+
+const isPage = (k: string): k is PageKey => Object.prototype.hasOwnProperty.call(PAGES, k);
+
+/** Sidebar order. A group without a label is a single link. */
+const NAV: { label?: string; keys: PageKey[] }[] = [
+  { label: "Overview", keys: ["home", "profile"] },
+  { label: "Academic", keys: ["academic-transcript", "academic-dashboard"] },
+  { label: "Finances", keys: ["fees-pay", "fees-structure", "fees-statement"] },
+  { keys: ["timetable"] },
+  { label: "Career pathway", keys: ["career-recommender", "career-explorer"] },
+  { keys: ["materials"] },
+  { keys: ["announcements"] },
+  { keys: ["ai"] },
+];
+
+/** Keys that older cards use, mapped to the page that now holds that content. */
+const ALIASES: Record<string, PageKey> = {
+  fees: "fees-statement",
+  "fees-invoices": "fees-statement",
+  "career-pathways": "career-explorer",
+  "career-profile": "career-recommender",
+};
+
+/* ------------------------------------------------------------------ */
+/* Icons                                                               */
+/* ------------------------------------------------------------------ */
+
 const ICON_PATHS: Record<IconName, ReactNode> = {
-  dashboard: (
+  search: (
     <>
-      <rect x="3" y="3" width="7" height="7" rx="1.5" />
-      <rect x="14" y="3" width="7" height="7" rx="1.5" />
-      <rect x="3" y="14" width="7" height="7" rx="1.5" />
-      <rect x="14" y="14" width="7" height="7" rx="1.5" />
+      <circle cx="11" cy="11" r="7" />
+      <path d="M21 21l-4.3-4.3" />
     </>
   ),
+  bolt: <path d="M13 2L4 14h7l-1 8 9-12h-7z" />,
+  home: <path d="M3 11l9-8 9 8M5 10v10h14V10M10 20v-6h4v6" />,
   profile: (
     <>
       <circle cx="12" cy="8" r="4" />
       <path d="M4 21c0-4 4-6 8-6s8 2 8 6" />
-    </>
-  ),
-  progress: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
-  heatmap: (
-    <>
-      {[3, 10, 17].flatMap((x) =>
-        [3, 10, 17].map((y) => <rect key={`${x}-${y}`} x={x} y={y} width="4" height="4" rx="1" />),
-      )}
     </>
   ),
   exams: (
@@ -514,45 +719,24 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
       <path d="M9 4h6v3H9zM9 12h6M9 16h4" />
     </>
   ),
-  plan: <path d="M9 6h11M9 12h11M9 18h11M4.5 6.5l1 1 2-2M4.5 12.5l1 1 2-2M4.5 18.5l1 1 2-2" />,
-  timetable: (
-    <>
-      <rect x="3" y="5" width="18" height="16" rx="2" />
-      <path d="M3 10h18M8 3v4M16 3v4" />
-    </>
-  ),
-  materials: <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />,
-  download: <path d="M12 4v11M7 11l5 5 5-5M5 20h14" />,
-  structure: (
-    <>
-      <path d="M6 3h9l4 4v14H6z" />
-      <path d="M14 3v5h5M9 13h7M9 17h7" />
-    </>
-  ),
+  progress: <path d="M3 17l6-6 4 4 8-8M15 7h6v6" />,
   payments: (
     <>
       <rect x="2" y="6" width="20" height="12" rx="2" />
       <circle cx="12" cy="12" r="2.5" />
     </>
   ),
+  structure: (
+    <>
+      <path d="M6 3h9l4 4v14H6z" />
+      <path d="M14 3v5h5M9 13h7M9 17h7" />
+    </>
+  ),
   balance: <path d="M12 4v16M6 20h12M5 8h14M5 8l-3 7a3 3 0 0 0 6 0zM19 8l-3 7a3 3 0 0 0 6 0z" />,
-  receipt: (
+  timetable: (
     <>
-      <path d="M6 3h12v18l-3-2-3 2-3-2-3 2z" />
-      <path d="M9 8h6M9 12h6" />
-    </>
-  ),
-  analysis: (
-    <>
-      <path d="M12 3a9 9 0 1 0 9 9h-9z" />
-      <path d="M15 3.5A9 9 0 0 1 20.5 9H15z" />
-    </>
-  ),
-  chat: <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12z" />,
-  tutor: (
-    <>
-      <path d="M2 9l10-5 10 5-10 5z" />
-      <path d="M6 11.5V16c0 1.5 3 3 6 3s6-1.5 6-3v-4.5M22 9v6" />
+      <rect x="3" y="5" width="18" height="16" rx="2" />
+      <path d="M3 10h18M8 3v4M16 3v4" />
     </>
   ),
   career: (
@@ -562,19 +746,21 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
     </>
   ),
   pathways: <path d="M6 3v12M6 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM18 9a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM18 9c0 5-12 2-12 6" />,
-  messages: (
-    <>
-      <rect x="3" y="5" width="18" height="14" rx="2" />
-      <path d="M3 7l9 7 9-7" />
-    </>
-  ),
+  materials: <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20" />,
   announcements: (
     <>
       <path d="M4 10v4h3l8 4V6L7 10H4z" />
       <path d="M18.5 9.5a4 4 0 0 1 0 5" />
     </>
   ),
-  privacy: <path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z" />,
+  sparkle: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z" />,
+  tutor: (
+    <>
+      <path d="M2 9l10-5 10 5-10 5z" />
+      <path d="M6 11.5V16c0 1.5 3 3 6 3s6-1.5 6-3v-4.5M22 9v6" />
+    </>
+  ),
+  download: <path d="M12 4v11M7 11l5 5 5-5M5 20h14" />,
   menu: <path d="M4 6h16M4 12h16M4 18h16" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
 };
@@ -601,113 +787,26 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
 /* Sidebar and header                                                  */
 /* ------------------------------------------------------------------ */
 
-type FeesTab = "structure" | "payments" | "balances" | "receipts" | "analysis";
-
-const FEES_TABS: { key: FeesTab; label: string }[] = [
-  { key: "structure", label: "Fee structure" },
-  { key: "payments", label: "Payment records" },
-  { key: "balances", label: "Balances" },
-  { key: "receipts", label: "Receipts" },
-  { key: "analysis", label: "Analysis" },
-];
-
-interface NavItem {
-  key: string;
-  label: string;
-  icon: IconName;
-  badge?: number;
-  /** Id of an in-page section to scroll to. Without it, the link opens another page. */
-  section?: string;
-  /** Fees tab to open when the link is used. */
-  feesTab?: FeesTab;
-}
-
-interface NavGroup {
-  group: string;
-  items: NavItem[];
-}
-
-function buildMenu(badges: LearnerDashboardData["badges"]): NavGroup[] {
-  return [
-    {
-      group: "Overview",
-      items: [
-        { key: "dashboard", label: "Dashboard", icon: "dashboard", section: "top" },
-        { key: "profile", label: "My Profile", icon: "profile" },
-      ],
-    },
-    {
-      group: "Academic progress",
-      items: [
-        { key: "progress", label: "Progress and analytics", icon: "progress", section: "progress" },
-        { key: "heatmap", label: "Subject heatmap", icon: "heatmap", section: "heatmap" },
-        { key: "exams", label: "Exam results", icon: "exams", section: "exams" },
-        { key: "plan", label: "Study plan", icon: "plan", section: "plan" },
-        { key: "timetable", label: "Timetable", icon: "timetable" },
-      ],
-    },
-    {
-      group: "Learning materials",
-      items: [
-        { key: "materials", label: "Notes and past papers", icon: "materials", section: "materials" },
-        { key: "downloads", label: "Results downloads", icon: "download", section: "downloads" },
-      ],
-    },
-    {
-      group: "Fees",
-      items: [
-        { key: "fees-structure", label: "Fee structure", icon: "structure", section: "fees", feesTab: "structure" },
-        { key: "fees-payments", label: "Payment records", icon: "payments", section: "fees", feesTab: "payments" },
-        { key: "fees-balances", label: "Fee balances", icon: "balance", section: "fees", feesTab: "balances" },
-        { key: "fees-receipts", label: "Receipts", icon: "receipt", section: "fees", feesTab: "receipts" },
-        { key: "fees-analysis", label: "Fees analysis", icon: "analysis", section: "fees", feesTab: "analysis" },
-      ],
-    },
-    {
-      group: "AI",
-      items: [
-        { key: "ai-chat", label: "AI Chat", icon: "chat", section: "ai-chat" },
-        { key: "ai-tutor", label: "AI Tutor", icon: "tutor", section: "ai-tutor" },
-      ],
-    },
-    {
-      group: "Career",
-      items: [
-        { key: "career-recommender", label: "Career recommender", icon: "career" },
-        { key: "career-pathways", label: "Explore pathways", icon: "pathways" },
-      ],
-    },
-    {
-      group: "Communication",
-      items: [
-        { key: "messages", label: "Messages", icon: "messages", badge: badges.messages },
-        { key: "announcements", label: "Announcements", icon: "announcements", badge: badges.announcements, section: "announcements" },
-      ],
-    },
-    {
-      group: "Account",
-      items: [{ key: "privacy", label: "Settings and Privacy", icon: "privacy" }],
-    },
-  ];
-}
-
-interface SidebarProps {
-  data: LearnerDashboardData;
+function Sidebar({
+  learner,
+  open,
+  page,
+  badges,
+  logoSrc,
+  onClose,
+}: {
+  learner: LearnerDashboardData["learner"];
   open: boolean;
-  activeKey: string;
+  page: PageKey;
+  badges: Partial<Record<PageKey, number>>;
+  logoSrc?: string;
   onClose: () => void;
-  onSelect: (item: NavItem) => void;
-  onNavigate?: (key: string) => void;
-}
-
-function Sidebar({ data, open, activeKey, onClose, onSelect, onNavigate }: SidebarProps) {
-  const menu = useMemo(() => buildMenu(data.badges), [data.badges]);
-
+}) {
   return (
     <aside id="learner-sidebar" className={`ss-sidebar${open ? " is-open" : ""}`}>
       <div className="ss-brand">
-        <span className="ss-logo" aria-hidden="true">
-          <strong>SP</strong>
+        <span className={`ss-logo${logoSrc ? " has-img" : ""}`} aria-hidden="true">
+          {logoSrc ? <img src={logoSrc} alt="" /> : <strong>SP</strong>}
         </span>
         <div className="ss-brand-text">
           <strong>Senior School</strong>
@@ -720,38 +819,31 @@ function Sidebar({ data, open, activeKey, onClose, onSelect, onNavigate }: Sideb
       </div>
 
       <nav className="ss-nav" aria-label="Learner navigation">
-        {menu.map((group) => (
-          <div className="ss-group" key={group.group}>
-            <p className="ss-group-label">{group.group}</p>
-            {group.items.map((item) => {
-              const active = item.key === activeKey;
+        {NAV.map((group, gi) => (
+          <div className="ss-group" key={group.label ?? `g${gi}`}>
+            {group.label ? <p className="ss-group-label">{group.label}</p> : null}
+            {group.keys.map((key) => {
+              const meta = PAGES[key];
+              const active = key === page;
+              const badge = badges[key];
               return (
-                <a
-                  key={item.key}
-                  href={`#${item.section ?? item.key}`}
+                <Link
+                  key={key}
+                  to={PAGE_PATHS[key]}
                   className={`ss-link${active ? " is-active" : ""}`}
-                  aria-current={active ? "location" : undefined}
-                  onClick={(e) => {
-                    if (item.section) {
-                      e.preventDefault();
-                      onSelect(item);
-                      return;
-                    }
-                    onClose();
-                    if (onNavigate) {
-                      e.preventDefault();
-                      onNavigate(item.key);
-                    }
-                  }}
+                  aria-current={active ? "page" : undefined}
+                  onClick={onClose}
                 >
-                  <Icon name={item.icon} />
-                  <span>{item.label}</span>
-                  {item.badge ? (
+                  <Icon name={meta.icon} />
+                  <span>{meta.label}</span>
+                  {key === "ai" ? <em className="ss-pill">AI</em> : null}
+                  {badge ? (
                     <em className="ss-badge" style={{ fontStyle: "normal" }}>
-                      {item.badge}
+                      <span className="ss-sr">{badge} unread</span>
+                      <span aria-hidden="true">{badge}</span>
                     </em>
                   ) : null}
-                </a>
+                </Link>
               );
             })}
           </div>
@@ -759,32 +851,23 @@ function Sidebar({ data, open, activeKey, onClose, onSelect, onNavigate }: Sideb
       </nav>
 
       <div className="ss-side-foot">
-        {data.learner.fullName} · {data.learner.classLabel}
+        {learner.fullName} · {learner.classLabel}
       </div>
     </aside>
   );
 }
 
-function PageHeader({ dateLabel, onOpenMenu }: { dateLabel: string; onOpenMenu: () => void }) {
+function PageHeader({ title, dateLabel, onOpenMenu }: { title: string; dateLabel: string; onOpenMenu: () => void }) {
   return (
     <header className="ss-header">
       <button type="button" className="ss-h-icon ss-h-burger" aria-label="Open menu" aria-controls="learner-sidebar" onClick={onOpenMenu}>
         <Icon name="menu" />
       </button>
       <div className="ss-h-title">
-        <h1>Dashboard</h1>
+        <h1>{title}</h1>
         <span>{dateLabel}</span>
       </div>
     </header>
-  );
-}
-
-function SectionHead({ id, title, note }: { id?: string; title: string; note?: string }) {
-  return (
-    <div className="ss-sec-head" id={id}>
-      <h2>{title}</h2>
-      {note ? <p>{note}</p> : null}
-    </div>
   );
 }
 
@@ -828,7 +911,104 @@ function DownloadButton({
 }
 
 /* ------------------------------------------------------------------ */
-/* Hero and KPIs                                                       */
+/* Profile                                                             */
+/* ------------------------------------------------------------------ */
+
+function ProfilePage({ data, onNavigate }: { data: LearnerDashboardData; onNavigate: (key: string) => void }) {
+  const p = data.profile ?? {};
+  const initials = data.learner.fullName
+    .split(" ")
+    .map((w) => w[0])
+    .slice(0, 2)
+    .join("")
+    .toUpperCase();
+
+  const personal: [string, string | undefined][] = [
+    ["Full name", data.learner.fullName],
+    ["Class", data.learner.classLabel],
+    ["Admission number", p.admissionNo],
+    ["Gender", p.gender],
+    ["Date of birth", p.dob ? fmtDate(p.dob) : undefined],
+    ["Senior school pathway", p.pathway],
+  ];
+  const contact: [string, string | undefined][] = [
+    ["Parent or guardian", p.guardian],
+    ["Guardian phone", p.guardianPhone],
+    ["Learner email", p.email],
+  ];
+
+  return (
+    <>
+      <section className="ss-card ss-profile-head" aria-label="Learner summary">
+        <span className="ss-avatar-lg" aria-hidden="true">
+          {initials}
+        </span>
+        <div>
+          <h2>{data.learner.fullName}</h2>
+          <p className="ss-muted" style={{ margin: "2px 0 0" }}>
+            {data.learner.classLabel} · {data.termLabel}
+          </p>
+        </div>
+        <button type="button" className="ss-btn ss-profile-btn" onClick={() => onNavigate("privacy")}>
+          Settings and privacy
+        </button>
+      </section>
+
+      <div className="ss-two">
+        <section className="ss-card ss-panel" aria-labelledby="personal-title">
+          <header>
+            <h3 id="personal-title">Personal details</h3>
+          </header>
+          <dl className="ss-dl">
+            {personal.map(([k, v]) => (
+              <div key={k}>
+                <dt>{k}</dt>
+                <dd>{v ?? "Not on record"}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+
+        <section className="ss-card ss-panel" aria-labelledby="contact-title">
+          <header>
+            <h3 id="contact-title">Guardian and contact</h3>
+          </header>
+          <dl className="ss-dl ss-dl-one">
+            {contact.map(([k, v]) => (
+              <div key={k}>
+                <dt>{k}</dt>
+                <dd>{v ?? "Not on record"}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      </div>
+
+      <section className="ss-card ss-panel" aria-labelledby="record-title">
+        <header>
+          <h3 id="record-title">This term at a glance</h3>
+          <span className="ss-count">{data.termLabel}</span>
+        </header>
+        <div className="ss-pbody">
+          <div>
+            <div className="ss-bar" role="progressbar" aria-valuenow={data.attendance.percent} aria-valuemin={0} aria-valuemax={100} aria-label="Attendance">
+              <i style={{ width: `${data.attendance.percent}%` }} />
+            </div>
+            <p className="ss-muted" style={{ margin: "8px 0 0" }}>
+              Attendance {data.attendance.percent}%: {data.attendance.present} of {data.attendance.total} school days.
+            </p>
+          </div>
+          <p className="ss-muted" style={{ margin: 0 }}>
+            If something here is wrong, please ask the school office to correct it. You cannot edit these details yourself.
+          </p>
+        </div>
+      </section>
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Academic dashboard                                                  */
 /* ------------------------------------------------------------------ */
 
 function Hero({
@@ -842,7 +1022,7 @@ function Hero({
   latest?: ExamStat;
   outstanding: number;
   tasksLeft: number;
-  onGoto: (id: string) => void;
+  onGoto: (key: PageKey) => void;
 }) {
   return (
     <section className="ss-hero" aria-label="Welcome">
@@ -854,16 +1034,15 @@ function Hero({
           {greeting()}, {data.learner.firstName}
         </h2>
         <p>
-          You have <strong>{tasksLeft}</strong> study {tasksLeft === 1 ? "task" : "tasks"} left this week. Your AI Tutor is ready when you
-          are.
+          You have <strong>{tasksLeft}</strong> study {tasksLeft === 1 ? "task" : "tasks"} left this week. {AI_NAME} is ready when you are.
         </p>
         <div className="ss-hero-btns">
-          <button type="button" className="ss-btn ss-btn-gold" onClick={() => onGoto("ai-tutor")}>
+          <button type="button" className="ss-btn ss-btn-gold" onClick={() => onGoto("ai")}>
             <Icon name="tutor" size={16} />
             Start a tutor lesson
           </button>
-          <button type="button" className="ss-btn ss-btn-ghost" onClick={() => onGoto("progress")}>
-            See my progress
+          <button type="button" className="ss-btn ss-btn-ghost" onClick={() => onGoto("academic-transcript")}>
+            See my transcript
           </button>
         </div>
       </div>
@@ -933,10 +1112,6 @@ function KpiRow({ stats, attendance }: { stats: ExamStat[]; attendance: LearnerD
     </div>
   );
 }
-
-/* ------------------------------------------------------------------ */
-/* Academic progress                                                   */
-/* ------------------------------------------------------------------ */
 
 function TrendChart({ stats }: { stats: ExamStat[] }) {
   const W = 640;
@@ -1132,7 +1307,7 @@ function HeatmapCard({ progress }: { progress: Progress }) {
   const modeLabel = HEAT_MODES.find((m) => m.key === mode)?.label ?? "";
 
   return (
-    <section id="heatmap" className="ss-card ss-panel" aria-labelledby="heatmap-title">
+    <section className="ss-card ss-panel" aria-labelledby="heatmap-title">
       <header>
         <h3 id="heatmap-title">Subject heatmap</h3>
         <span className="ss-count">{stats.length} exams, oldest to newest</span>
@@ -1207,10 +1382,74 @@ function HeatmapCard({ progress }: { progress: Progress }) {
   );
 }
 
-/**
- * Exam results in a grouped statement layout: one table, a header row, a
- * coloured band per exam (newest first), one row per subject, and a totals row.
- */
+function PlanCard({ tasks, onToggle }: { tasks: StudyTask[]; onToggle: (id: string) => void }) {
+  const doneCount = tasks.filter((t) => t.done).length;
+  const percent = tasks.length ? Math.round((doneCount / tasks.length) * 100) : 0;
+
+  return (
+    <section className="ss-card ss-panel" aria-labelledby="plan-title">
+      <header>
+        <h3 id="plan-title">Your study plan this week</h3>
+        <span className="ss-count">
+          {doneCount} of {tasks.length} done
+        </span>
+      </header>
+      <div className="ss-pbody">
+        <div className="ss-bar" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100} aria-label="Study plan progress">
+          <i className="gold" style={{ width: `${percent}%` }} />
+        </div>
+        <div className="ss-tasks">
+          {tasks.map((t) => (
+            <button key={t.id} type="button" className="ss-task" aria-pressed={t.done} onClick={() => onToggle(t.id)}>
+              <span className="ss-task-box" aria-hidden="true">
+                {t.done ? (
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M5 12.5l4.5 4.5L19 7.5" />
+                  </svg>
+                ) : null}
+              </span>
+              <span className="ss-task-day">{t.day}</span>
+              <span className="ss-task-text">{t.text}</span>
+              <span className="ss-task-mins">{t.mins} min</span>
+            </button>
+          ))}
+        </div>
+        <p className="ss-muted" style={{ margin: 0 }}>
+          Tap a task to tick it off. The plan updates every week from your results and quizzes.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function TopicsCard({ topics, onNavigate }: { topics: Topic[]; onNavigate: (key: string) => void }) {
+  return (
+    <section className="ss-card ss-panel" aria-labelledby="topics-title">
+      <header>
+        <h3 id="topics-title">Topics to strengthen</h3>
+      </header>
+      <p className="ss-note">Based on your marks and tutor sessions. You choose what is shared with teachers and parents.</p>
+      <div className="ss-topics" style={{ marginTop: 12 }}>
+        {topics.map((t) => (
+          <div className="ss-topic" key={`${t.subject}-${t.topic}`}>
+            <div>
+              <small>{t.subject}</small>
+              <strong>{t.topic}</strong>
+            </div>
+            <button type="button" className="ss-btn ss-btn-sm" onClick={() => onNavigate(t.key)}>
+              {t.action}
+            </button>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Academic transcript                                                 */
+/* ------------------------------------------------------------------ */
+
 function ExamResultsCard({ progress }: { progress: Progress }) {
   const [term, setTerm] = useState("All");
 
@@ -1222,7 +1461,7 @@ function ExamResultsCard({ progress }: { progress: Progress }) {
   const shown = rows.filter((r) => term === "All" || r.exam.term === term);
 
   return (
-    <section id="exams" className="ss-card ss-panel" aria-labelledby="exams-title">
+    <section className="ss-card ss-panel" aria-labelledby="exams-title">
       <header>
         <h3 id="exams-title">Exam results</h3>
         <span className="ss-count">
@@ -1318,145 +1557,6 @@ function ExamResultsCard({ progress }: { progress: Progress }) {
   );
 }
 
-function PlanCard({ tasks, onToggle }: { tasks: StudyTask[]; onToggle: (id: string) => void }) {
-  const doneCount = tasks.filter((t) => t.done).length;
-  const percent = tasks.length ? Math.round((doneCount / tasks.length) * 100) : 0;
-
-  return (
-    <section id="plan" className="ss-card ss-panel" aria-labelledby="plan-title">
-      <header>
-        <h3 id="plan-title">Your study plan this week</h3>
-        <span className="ss-count">
-          {doneCount} of {tasks.length} done
-        </span>
-      </header>
-      <div className="ss-pbody">
-        <div className="ss-bar" role="progressbar" aria-valuenow={percent} aria-valuemin={0} aria-valuemax={100} aria-label="Study plan progress">
-          <i className="gold" style={{ width: `${percent}%` }} />
-        </div>
-        <div className="ss-tasks">
-          {tasks.map((t) => (
-            <button key={t.id} type="button" className="ss-task" aria-pressed={t.done} onClick={() => onToggle(t.id)}>
-              <span className="ss-task-box" aria-hidden="true">
-                {t.done ? (
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3.4" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M5 12.5l4.5 4.5L19 7.5" />
-                  </svg>
-                ) : null}
-              </span>
-              <span className="ss-task-day">{t.day}</span>
-              <span className="ss-task-text">{t.text}</span>
-              <span className="ss-task-mins">{t.mins} min</span>
-            </button>
-          ))}
-        </div>
-        <p className="ss-muted" style={{ margin: 0 }}>
-          Tap a task to tick it off. The plan updates every week from your results and quizzes.
-        </p>
-      </div>
-    </section>
-  );
-}
-
-function TopicsCard({ topics, onNavigate }: { topics: Topic[]; onNavigate?: (key: string) => void }) {
-  return (
-    <section id="weak" className="ss-card ss-panel" aria-labelledby="topics-title">
-      <header>
-        <h3 id="topics-title">Topics to strengthen</h3>
-      </header>
-      <p className="ss-note">Based on your marks and tutor sessions. You choose what is shared with teachers and parents.</p>
-      <div className="ss-topics" style={{ marginTop: 12 }}>
-        {topics.map((t) => (
-          <div className="ss-topic" key={`${t.subject}-${t.topic}`}>
-            <div>
-              <small>{t.subject}</small>
-              <strong>{t.topic}</strong>
-            </div>
-            <button type="button" className="ss-btn ss-btn-sm" onClick={() => onNavigate?.(t.key)}>
-              {t.action}
-            </button>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Learning materials                                                  */
-/* ------------------------------------------------------------------ */
-
-function MaterialsCard({
-  materials,
-  onDownload,
-}: {
-  materials: Material[];
-  onDownload?: (kind: DownloadKind, id: string) => void;
-}) {
-  const [subject, setSubject] = useState("All");
-  const [kind, setKind] = useState("All");
-  const subjects = useMemo(() => Array.from(new Set(materials.map((m) => m.subject))), [materials]);
-  const kinds = useMemo(() => Array.from(new Set(materials.map((m) => m.kind))), [materials]);
-  const shown = materials.filter((m) => (subject === "All" || m.subject === subject) && (kind === "All" || m.kind === kind));
-
-  return (
-    <section id="materials" className="ss-card ss-panel" aria-labelledby="materials-title">
-      <header>
-        <h3 id="materials-title">Notes and past papers</h3>
-        <span className="ss-count">
-          {shown.length} of {materials.length} PDFs
-        </span>
-      </header>
-      <div className="ss-pbody">
-        <div className="ss-toolbar" style={{ margin: 0 }}>
-          <label className="ss-lab">
-            Subject
-            <select className="ss-input ss-input-auto" value={subject} onChange={(e) => setSubject(e.target.value)}>
-              <option value="All">All subjects</option>
-              {subjects.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="ss-lab">
-            Type
-            <select className="ss-input ss-input-auto" value={kind} onChange={(e) => setKind(e.target.value)}>
-              <option value="All">All types</option>
-              {kinds.map((k) => (
-                <option key={k} value={k}>
-                  {k}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-        {shown.length ? (
-          <div className="ss-scroll ss-scroll-sm">
-            <ul className="ss-list ss-mat">
-              {shown.map((m) => (
-                <li key={m.id}>
-                  <span className="ss-tag">{m.kind}</span>
-                  <div>
-                    <strong>{m.title}</strong>
-                    <small>
-                      {m.subject} · PDF · {m.sizeLabel} · {m.addedLabel}
-                    </small>
-                  </div>
-                  <DownloadButton kind="material" id={m.id} label="Download" what={m.title} url={m.url} onDownload={onDownload} />
-                </li>
-              ))}
-            </ul>
-          </div>
-        ) : (
-          <p className="ss-empty">No materials match these filters.</p>
-        )}
-      </div>
-    </section>
-  );
-}
-
 function ResultsDownloadsCard({
   progress,
   onDownload,
@@ -1467,10 +1567,10 @@ function ResultsDownloadsCard({
   const rows = useMemo(() => [...progress.stats].reverse(), [progress]);
 
   return (
-    <section id="downloads" className="ss-card ss-panel" aria-labelledby="downloads-title">
+    <section className="ss-card ss-panel" aria-labelledby="downloads-title">
       <header>
-        <h3 id="downloads-title">Results downloads</h3>
-        <span className="ss-count">{rows.length} report cards</span>
+        <h3 id="downloads-title">Report cards</h3>
+        <span className="ss-count">{rows.length} available</span>
       </header>
       <div className="ss-pbody">
         {rows.length ? (
@@ -1499,70 +1599,272 @@ function ResultsDownloadsCard({
 }
 
 /* ------------------------------------------------------------------ */
-/* Fees                                                                */
+/* Finances: pay fees, fee structure, statement and balances           */
 /* ------------------------------------------------------------------ */
 
-function StructurePanel({
+const PAY_METHODS: PayMethod[] = ["M-Pesa", "Bank transfer", "Card"];
+const KE_PHONE = /^(?:\+?254|0)[17]\d{8}$/;
+
+function PayFeesPage({
   fees,
-  onNavigate,
+  summary,
+  onPay,
+  onGoto,
+}: {
+  fees: LearnerDashboardData["fees"];
+  summary: FeeSummary;
+  onPay?: (r: PayFeesRequest) => void;
+  onGoto: (key: PageKey) => void;
+}) {
+  const owing = summary.rows.filter((r) => r.balance > 0);
+  const balanceOf = (t: string) => summary.rows.find((r) => r.term === t)?.balance ?? 0;
+  const firstTerm = owing.find((r) => r.term === fees.currentTerm)?.term ?? owing[0]?.term ?? "";
+
+  const [term, setTerm] = useState(firstTerm);
+  const [amount, setAmount] = useState(firstTerm ? String(balanceOf(firstTerm)) : "");
+  const [method, setMethod] = useState<PayMethod>("M-Pesa");
+  const [phone, setPhone] = useState("");
+  const [errors, setErrors] = useState<{ amount?: string; phone?: string }>({});
+  const [sent, setSent] = useState("");
+
+  const changeTerm = (t: string) => {
+    setTerm(t);
+    setAmount(String(balanceOf(t)));
+    setErrors({});
+    setSent("");
+  };
+
+  const submit = (e: FormEvent) => {
+    e.preventDefault();
+    const next: { amount?: string; phone?: string } = {};
+    const amt = Number(amount.replace(/,/g, "").trim());
+    const bal = balanceOf(term);
+    if (!Number.isFinite(amt) || amt <= 0) next.amount = "Enter the amount you want to pay.";
+    else if (amt > bal) next.amount = `This is more than the ${fees.currency} ${fmt(bal)} balance for ${term}.`;
+    if (method === "M-Pesa" && !KE_PHONE.test(phone.replace(/\s+/g, ""))) {
+      next.phone = "Enter a Safaricom number such as 0712 345 678.";
+    }
+    setErrors(next);
+    if (next.amount || next.phone) {
+      setSent("");
+      return;
+    }
+    onPay?.({ term, amount: amt, method, phone: method === "M-Pesa" ? phone.replace(/\s+/g, "") : undefined });
+    setSent(
+      method === "M-Pesa"
+        ? `Payment request of ${fees.currency} ${fmt(amt)} for ${term} sent. Approve it on your phone.`
+        : `Payment of ${fees.currency} ${fmt(amt)} for ${term} submitted.`,
+    );
+  };
+
+  return (
+    <div className="ss-two">
+      <section className="ss-card ss-panel" aria-labelledby="pay-title">
+        <header>
+          <h3 id="pay-title">Make a payment</h3>
+        </header>
+        {owing.length ? (
+          <form className="ss-payform" onSubmit={submit} noValidate>
+            <label className="ss-lab" htmlFor="pay-term">
+              Term
+              <select id="pay-term" className="ss-input" value={term} onChange={(e) => changeTerm(e.target.value)}>
+                {owing.map((r) => (
+                  <option key={r.term} value={r.term}>
+                    {r.term}: balance {fees.currency} {fmt(r.balance)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="ss-lab" htmlFor="pay-amount">
+              Amount ({fees.currency})
+              <input
+                id="pay-amount"
+                className="ss-input"
+                type="text"
+                inputMode="numeric"
+                value={amount}
+                onChange={(e) => setAmount(e.target.value)}
+                aria-invalid={errors.amount ? true : undefined}
+                aria-describedby={errors.amount ? "pay-amount-err" : undefined}
+              />
+              {errors.amount ? (
+                <span id="pay-amount-err" className="ss-field-err">
+                  {errors.amount}
+                </span>
+              ) : null}
+            </label>
+            <label className="ss-lab" htmlFor="pay-method">
+              Payment method
+              <select id="pay-method" className="ss-input" value={method} onChange={(e) => setMethod(e.target.value as PayMethod)}>
+                {PAY_METHODS.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {method === "M-Pesa" ? (
+              <label className="ss-lab" htmlFor="pay-phone">
+                M-Pesa phone number
+                <input
+                  id="pay-phone"
+                  className="ss-input"
+                  type="tel"
+                  inputMode="tel"
+                  autoComplete="tel"
+                  placeholder="0712 345 678"
+                  value={phone}
+                  onChange={(e) => setPhone(e.target.value)}
+                  aria-invalid={errors.phone ? true : undefined}
+                  aria-describedby={errors.phone ? "pay-phone-err" : undefined}
+                />
+                {errors.phone ? (
+                  <span id="pay-phone-err" className="ss-field-err">
+                    {errors.phone}
+                  </span>
+                ) : null}
+              </label>
+            ) : null}
+            <button type="submit" className="ss-btn ss-btn-primary">
+              Pay {amount && Number(amount.replace(/,/g, "")) > 0 ? `${fees.currency} ${fmt(Number(amount.replace(/,/g, "")) || 0)}` : "now"}
+            </button>
+            <p role="status" className="ss-sent" style={{ margin: 0 }}>
+              {sent}
+            </p>
+          </form>
+        ) : (
+          <div className="ss-pbody">
+            <p className="ss-empty">You have no balance to pay. Every term is cleared.</p>
+            <div className="ss-btn-row">
+              <button type="button" className="ss-btn" onClick={() => onGoto("fees-statement")}>
+                See your statement
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="ss-card ss-panel" aria-labelledby="owing-title">
+        <header>
+          <h3 id="owing-title">What you owe</h3>
+          <span className="ss-count">
+            {fees.currency} {fmt(summary.outstanding)} in total
+          </span>
+        </header>
+        <div className="ss-pbody">
+          <ul className="ss-list">
+            {summary.rows.map((r) => (
+              <li key={r.term}>
+                <div>
+                  <strong>{r.term}</strong>
+                  <small>
+                    Billed {fmt(r.billed)} · Paid {fmt(r.paid)}
+                  </small>
+                </div>
+                {r.balance === 0 ? (
+                  <span className="ss-tag ok">Cleared</span>
+                ) : (
+                  <span className={`ss-tag${r.overdue > 0 ? " warn" : ""}`}>
+                    {fmt(r.balance)} {r.overdue > 0 ? "overdue" : `due ${r.dueLabel}`}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ul>
+          <p className="ss-muted" style={{ margin: 0 }}>
+            A receipt appears in your fees statement after the payment is recorded.
+          </p>
+          <div className="ss-btn-row">
+            <button type="button" className="ss-btn" onClick={() => onGoto("fees-structure")}>
+              See fee structure
+            </button>
+            <button type="button" className="ss-btn" onClick={() => onGoto("fees-statement")}>
+              See statement
+            </button>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function FeeStructurePage({
+  fees,
+  onGoto,
   onDownload,
 }: {
   fees: LearnerDashboardData["fees"];
-  onNavigate?: (key: string) => void;
+  onGoto: (key: PageKey) => void;
   onDownload?: (kind: DownloadKind, id: string) => void;
 }) {
   const [i, setI] = useState(() => Math.max(0, fees.structure.findIndex((t) => t.term === fees.currentTerm)));
   const t = fees.structure[i];
-  if (!t) return <p className="ss-empty">No fee structure has been published yet.</p>;
-  const total = sum(t.lines.map((l) => l.amount));
 
   return (
-    <>
-      <div className="ss-seg ss-seg-lg" role="group" aria-label="Term">
-        {fees.structure.map((s, idx) => (
-          <button key={s.term} type="button" className={idx === i ? "is-on" : ""} aria-pressed={idx === i} onClick={() => setI(idx)}>
-            {s.term}
-          </button>
-        ))}
+    <section className="ss-card ss-panel" aria-labelledby="structure-title">
+      <header>
+        <h3 id="structure-title">Fees by term</h3>
+        {t ? <span className="ss-count">Due {t.dueLabel}</span> : null}
+      </header>
+      <div className="ss-pbody">
+        {t ? (
+          <>
+            <div className="ss-seg ss-seg-lg" role="group" aria-label="Term">
+              {fees.structure.map((s, idx) => (
+                <button key={s.term} type="button" className={idx === i ? "is-on" : ""} aria-pressed={idx === i} onClick={() => setI(idx)}>
+                  {s.term}
+                </button>
+              ))}
+            </div>
+            <div className="ss-scroll">
+              <table className="ss-table">
+                <thead>
+                  <tr>
+                    <th>Item</th>
+                    <th className="ss-num">Amount ({fees.currency})</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {t.lines.map((l) => (
+                    <tr key={l.name}>
+                      <td>{l.name}</td>
+                      <td className="ss-num">{fmt(l.amount)}</td>
+                    </tr>
+                  ))}
+                  <tr className="ss-total">
+                    <td>
+                      <strong>Total for {t.term}</strong>
+                    </td>
+                    <td className="ss-num">
+                      <strong>{fmt(sum(t.lines.map((l) => l.amount)))}</strong>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div className="ss-btn-row">
+              <button type="button" className="ss-btn ss-btn-primary" onClick={() => onGoto("fees-pay")}>
+                Pay fees
+              </button>
+              <DownloadButton kind="fee-structure" id={t.term} label="Download PDF" what={`${t.term} fee structure`} small={false} onDownload={onDownload} />
+            </div>
+          </>
+        ) : (
+          <p className="ss-empty">No fee structure has been published yet.</p>
+        )}
       </div>
-      <div className="ss-scroll">
-        <table className="ss-table">
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th className="ss-num">Amount ({fees.currency})</th>
-            </tr>
-          </thead>
-          <tbody>
-            {t.lines.map((l) => (
-              <tr key={l.name}>
-                <td>{l.name}</td>
-                <td className="ss-num">{fmt(l.amount)}</td>
-              </tr>
-            ))}
-            <tr className="ss-total">
-              <td>
-                <strong>Total for {t.term}</strong>
-              </td>
-              <td className="ss-num">
-                <strong>{fmt(total)}</strong>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <p className="ss-muted" style={{ margin: 0 }}>
-        This is the same structure as on the Fees pages. Payment is due {t.dueLabel}.
-      </p>
-      <div className="ss-btn-row">
-        <button type="button" className="ss-btn ss-btn-primary" onClick={() => onNavigate?.("fees-structure")}>
-          Open full fee structure
-        </button>
-        <DownloadButton kind="fee-structure" id={t.term} label="Download PDF" what={`${t.term} fee structure`} small={false} onDownload={onDownload} />
-      </div>
-    </>
+    </section>
   );
 }
+
+type StatementTab = "balances" | "statement" | "receipts" | "analysis";
+
+const STATEMENT_TABS: { key: StatementTab; label: string }[] = [
+  { key: "balances", label: "Balances" },
+  { key: "statement", label: "Payment statement" },
+  { key: "receipts", label: "Receipts" },
+  { key: "analysis", label: "Analysis" },
+];
 
 function PaymentsPanel({ fees }: { fees: LearnerDashboardData["fees"] }) {
   const rows = useMemo(() => [...fees.payments].sort((a, b) => b.date.localeCompare(a.date)), [fees.payments]);
@@ -1607,11 +1909,13 @@ function PaymentsPanel({ fees }: { fees: LearnerDashboardData["fees"] }) {
 function BalancesPanel({
   currency,
   summary,
+  onGoto,
   onNavigate,
 }: {
   currency: string;
   summary: FeeSummary;
-  onNavigate?: (key: string) => void;
+  onGoto: (key: PageKey) => void;
+  onNavigate: (key: string) => void;
 }) {
   return (
     <>
@@ -1665,10 +1969,12 @@ function BalancesPanel({
         </table>
       </div>
       <div className="ss-btn-row">
-        <button type="button" className="ss-btn ss-btn-primary" onClick={() => onNavigate?.("fees-invoices")}>
-          View invoices
-        </button>
-        <button type="button" className="ss-btn" onClick={() => onNavigate?.("fees-query")}>
+        {summary.outstanding > 0 ? (
+          <button type="button" className="ss-btn ss-btn-primary" onClick={() => onGoto("fees-pay")}>
+            Pay balance
+          </button>
+        ) : null}
+        <button type="button" className="ss-btn" onClick={() => onNavigate("fees-query")}>
           Raise a fee query
         </button>
       </div>
@@ -1807,45 +2113,42 @@ function AnalysisPanel({ fees, summary }: { fees: LearnerDashboardData["fees"]; 
   );
 }
 
-function FeesCard({
+function StatementCard({
   fees,
   summary,
-  tab,
-  onTab,
+  onGoto,
   onNavigate,
   onDownload,
 }: {
   fees: LearnerDashboardData["fees"];
   summary: FeeSummary;
-  tab: FeesTab;
-  onTab: (t: FeesTab) => void;
-  onNavigate?: (key: string) => void;
+  onGoto: (key: PageKey) => void;
+  onNavigate: (key: string) => void;
   onDownload?: (kind: DownloadKind, id: string) => void;
 }) {
+  const [tab, setTab] = useState<StatementTab>("balances");
   const { currency } = fees;
   const percent = summary.billed > 0 ? Math.min(100, Math.round((summary.paid / summary.billed) * 100)) : 0;
 
   const onKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    const i = FEES_TABS.findIndex((t) => t.key === tab);
+    const i = STATEMENT_TABS.findIndex((t) => t.key === tab);
     let next = i;
-    if (e.key === "ArrowRight") next = (i + 1) % FEES_TABS.length;
-    else if (e.key === "ArrowLeft") next = (i - 1 + FEES_TABS.length) % FEES_TABS.length;
+    if (e.key === "ArrowRight") next = (i + 1) % STATEMENT_TABS.length;
+    else if (e.key === "ArrowLeft") next = (i - 1 + STATEMENT_TABS.length) % STATEMENT_TABS.length;
     else if (e.key === "Home") next = 0;
-    else if (e.key === "End") next = FEES_TABS.length - 1;
+    else if (e.key === "End") next = STATEMENT_TABS.length - 1;
     else return;
     e.preventDefault();
-    const key = FEES_TABS[next].key;
-    onTab(key);
+    const key = STATEMENT_TABS[next].key;
+    setTab(key);
     document.getElementById(`fees-tab-${key}`)?.focus();
   };
 
   return (
-    <section id="fees" className="ss-card ss-panel" aria-labelledby="fees-title">
+    <section className="ss-card ss-panel" aria-labelledby="fees-title">
       <header>
-        <h3 id="fees-title">Fees</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onNavigate?.("fees")}>
-          Open the Fees pages
-        </button>
+        <h3 id="fees-title">Fees this year</h3>
+        <DownloadButton kind="fee-statement" id="all" label="Download statement" what="fees statement" onDownload={onDownload} />
       </header>
       <div className="ss-pbody">
         <div>
@@ -1875,7 +2178,7 @@ function FeesCard({
         </p>
 
         <div className="ss-tabs" role="tablist" aria-label="Fees views" onKeyDown={onKey}>
-          {FEES_TABS.map((t) => (
+          {STATEMENT_TABS.map((t) => (
             <button
               key={t.key}
               id={`fees-tab-${t.key}`}
@@ -1885,16 +2188,15 @@ function FeesCard({
               aria-selected={tab === t.key}
               aria-controls="fees-panel"
               tabIndex={tab === t.key ? 0 : -1}
-              onClick={() => onTab(t.key)}
+              onClick={() => setTab(t.key)}
             >
               {t.label}
             </button>
           ))}
         </div>
         <div id="fees-panel" role="tabpanel" aria-labelledby={`fees-tab-${tab}`} className="ss-tabpanel">
-          {tab === "structure" ? <StructurePanel fees={fees} onNavigate={onNavigate} onDownload={onDownload} /> : null}
-          {tab === "payments" ? <PaymentsPanel fees={fees} /> : null}
-          {tab === "balances" ? <BalancesPanel currency={currency} summary={summary} onNavigate={onNavigate} /> : null}
+          {tab === "balances" ? <BalancesPanel currency={currency} summary={summary} onGoto={onGoto} onNavigate={onNavigate} /> : null}
+          {tab === "statement" ? <PaymentsPanel fees={fees} /> : null}
           {tab === "receipts" ? <ReceiptsPanel fees={fees} onDownload={onDownload} /> : null}
           {tab === "analysis" ? <AnalysisPanel fees={fees} summary={summary} /> : null}
         </div>
@@ -1904,7 +2206,449 @@ function FeesCard({
 }
 
 /* ------------------------------------------------------------------ */
-/* AI                                                                  */
+/* Timetable                                                           */
+/* ------------------------------------------------------------------ */
+
+const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+
+function TimetablePage({ entries }: { entries: TimetableEntry[] }) {
+  const today = WEEKDAYS[new Date().getDay()];
+  const slots = useMemo(() => {
+    const seen = new Map<string, { start: string; end: string }>();
+    entries.forEach((e) => seen.set(`${e.start}-${e.end}`, { start: e.start, end: e.end }));
+    return Array.from(seen.values()).sort((a, b) => a.start.localeCompare(b.start));
+  }, [entries]);
+  const find = (day: string, s: { start: string; end: string }) =>
+    entries.find((e) => e.day === day && e.start === s.start && e.end === s.end);
+  const todays = entries.filter((e) => e.day === today && e.kind !== "break").sort((a, b) => a.start.localeCompare(b.start));
+
+  if (!entries.length) {
+    return (
+      <section className="ss-card ss-panel">
+        <p className="ss-empty" style={{ marginTop: 16 }}>
+          Your timetable has not been published yet.
+        </p>
+      </section>
+    );
+  }
+
+  return (
+    <>
+      <section className="ss-card ss-panel" aria-labelledby="tt-title">
+        <header>
+          <h3 id="tt-title">Weekly timetable</h3>
+          <span className="ss-count">{DAYS.includes(today) ? `Today is ${today}` : "Enjoy your weekend"}</span>
+        </header>
+        <div className="ss-pbody">
+          <div className="ss-xscroll">
+            <table className="ss-tt">
+              <caption className="ss-sr">Lessons by day and time</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Time</th>
+                  {DAYS.map((d) => (
+                    <th scope="col" key={d} className={d === today ? "is-today" : ""}>
+                      {d}
+                      {d === today ? <span className="ss-sr"> (today)</span> : null}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {slots.map((s) => {
+                  const cells = DAYS.map((d) => find(d, s));
+                  const allBreak = cells.every((c) => c?.kind === "break");
+                  return (
+                    <tr key={`${s.start}-${s.end}`} className={allBreak ? "is-break" : ""}>
+                      <th scope="row">
+                        {s.start} to {s.end}
+                      </th>
+                      {allBreak ? (
+                        <td colSpan={DAYS.length}>{cells[0]?.subject}</td>
+                      ) : (
+                        cells.map((c, i) => (
+                          <td key={DAYS[i]} className={DAYS[i] === today ? "is-today" : ""}>
+                            {c ? (
+                              <>
+                                <strong>{c.subject}</strong>
+                                {c.room || c.teacher ? <small>{[c.room, c.teacher].filter(Boolean).join(" · ")}</small> : null}
+                              </>
+                            ) : (
+                              <span className="ss-muted">–</span>
+                            )}
+                          </td>
+                        ))
+                      )}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      {todays.length ? (
+        <section className="ss-card ss-panel" aria-labelledby="today-title">
+          <header>
+            <h3 id="today-title">Today's lessons</h3>
+            <span className="ss-count">{todays.length} lessons</span>
+          </header>
+          <ul className="ss-list" style={{ marginTop: 4 }}>
+            {todays.map((e) => (
+              <li key={e.id}>
+                <span className="ss-tag">
+                  {e.start} to {e.end}
+                </span>
+                <div>
+                  <strong>{e.subject}</strong>
+                  <small>{[e.room, e.teacher].filter(Boolean).join(" · ")}</small>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
+    </>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Career pathways                                                     */
+/* ------------------------------------------------------------------ */
+
+function RecommenderPage({
+  career,
+  progress,
+  onGoto,
+  onNavigate,
+}: {
+  career: LearnerDashboardData["career"];
+  progress: Progress;
+  onGoto: (key: PageKey) => void;
+  onNavigate: (key: string) => void;
+}) {
+  const latest = progress.stats[progress.stats.length - 1];
+  const strengths = latest ? [...latest.exam.scores].sort((a, b) => b.score - a.score).slice(0, 3) : [];
+  const pathways = useMemo(() => [...career.pathways].sort((a, b) => b.match - a.match).slice(0, 3), [career.pathways]);
+
+  return (
+    <section className="ss-card ss-panel" aria-labelledby="career-title">
+      <header>
+        <h3 id="career-title">Your top suggestions</h3>
+        <button type="button" className="ss-link-btn" onClick={() => onGoto("career-explorer")}>
+          Explore all pathways
+        </button>
+      </header>
+      <div className="ss-pbody">
+        <div>
+          <div className="ss-bar" role="progressbar" aria-valuenow={career.profilePercent} aria-valuemin={0} aria-valuemax={100} aria-label="Interest profile progress">
+            <i style={{ width: `${career.profilePercent}%` }} />
+          </div>
+          <p className="ss-muted" style={{ margin: "8px 0 0" }}>
+            Interest and strengths profile: {career.profilePercent}% complete.
+            {career.profilePercent < 100 ? " Finish it to sharpen these suggestions." : ""}
+          </p>
+        </div>
+
+        {strengths.length ? (
+          <div>
+            <strong className="ss-h4">Your strongest subjects right now</strong>
+            <div className="ss-chips" style={{ marginTop: 8 }}>
+              {strengths.map((s) => (
+                <span className="ss-tag" key={s.subject}>
+                  {s.subject} {s.score}
+                </span>
+              ))}
+            </div>
+          </div>
+        ) : null}
+
+        <strong className="ss-h4">Suggested pathways</strong>
+        {pathways.length ? (
+          <div className="ss-careers">
+            {pathways.map((c) => (
+              <div className="ss-career" key={c.id}>
+                <div className="ss-career-head">
+                  <strong>{c.title}</strong>
+                  <span className="ss-tag ok">{c.match}% match</span>
+                </div>
+                <div className="ss-bar" role="progressbar" aria-valuenow={c.match} aria-valuemin={0} aria-valuemax={100} aria-label={`${c.title} match`}>
+                  <i style={{ width: `${c.match}%` }} />
+                </div>
+                <p>{c.why}</p>
+                {c.subjects.length ? <small>Builds on {c.subjects.join(", ")}</small> : null}
+                <div>
+                  <button type="button" className="ss-btn ss-btn-sm" onClick={() => onNavigate(`career-pathway-${c.id}`)}>
+                    View pathway
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="ss-empty">Complete your interest profile to get your first suggestions.</p>
+        )}
+
+        <div className="ss-btn-row">
+          <button type="button" className="ss-btn ss-btn-primary" onClick={() => onNavigate("career-profile")}>
+            {career.profilePercent < 100 ? "Continue profile" : "Review profile"}
+          </button>
+          <button type="button" className="ss-btn" onClick={() => onGoto("career-explorer")}>
+            Explore all pathways
+          </button>
+        </div>
+        <p className="ss-muted" style={{ margin: 0 }}>
+          These are ideas, not decisions. Suggestions come from your results and interests, and you can change or remove any of them.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function ExplorerPage({
+  career,
+  focusId,
+  onGoto,
+}: {
+  career: LearnerDashboardData["career"];
+  focusId: string | null;
+  onGoto: (key: PageKey) => void;
+}) {
+  const [q, setQ] = useState("");
+  const [subject, setSubject] = useState("All");
+  const subjects = useMemo(() => Array.from(new Set(career.pathways.flatMap((p) => p.subjects))).sort(), [career.pathways]);
+
+  const shown = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return [...career.pathways]
+      .filter((p) => subject === "All" || p.subjects.includes(subject))
+      .filter((p) => !needle || `${p.title} ${p.why} ${(p.examples ?? []).join(" ")}`.toLowerCase().includes(needle))
+      .sort((a, b) => b.match - a.match);
+  }, [career.pathways, q, subject]);
+
+  useEffect(() => {
+    if (!focusId) return;
+    document.getElementById(`pathway-${focusId}`)?.scrollIntoView({ block: "center" });
+  }, [focusId]);
+
+  return (
+    <section className="ss-card ss-panel" aria-labelledby="explore-title">
+      <header>
+        <h3 id="explore-title">All pathways</h3>
+        <span className="ss-count">
+          {shown.length} of {career.pathways.length}
+        </span>
+      </header>
+      <div className="ss-pbody">
+        <div className="ss-toolbar" style={{ margin: 0 }}>
+          <label className="ss-lab">
+            Search
+            <input className="ss-input ss-input-auto" type="search" placeholder="For example: engineer" value={q} onChange={(e) => setQ(e.target.value)} />
+          </label>
+          <label className="ss-lab">
+            Builds on
+            <select className="ss-input ss-input-auto" value={subject} onChange={(e) => setSubject(e.target.value)}>
+              <option value="All">All subjects</option>
+              {subjects.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+
+        {shown.length ? (
+          <div className="ss-careers">
+            {shown.map((c) => (
+              <div id={`pathway-${c.id}`} className={`ss-career${c.id === focusId ? " is-focus" : ""}`} key={c.id}>
+                <div className="ss-career-head">
+                  <strong>{c.title}</strong>
+                  <span className="ss-tag ok">{c.match}% match</span>
+                </div>
+                <div className="ss-bar" role="progressbar" aria-valuenow={c.match} aria-valuemin={0} aria-valuemax={100} aria-label={`${c.title} match`}>
+                  <i style={{ width: `${c.match}%` }} />
+                </div>
+                <p>{c.why}</p>
+                <small>Builds on {c.subjects.join(", ")}</small>
+                {c.examples?.length ? (
+                  <div>
+                    <small>Careers you could follow</small>
+                    <div className="ss-chips" style={{ marginTop: 6 }}>
+                      {c.examples.map((x) => (
+                        <span className="ss-tag" key={x}>
+                          {x}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+                <div>
+                  <button type="button" className="ss-btn ss-btn-sm" onClick={() => onGoto("ai")}>
+                    Ask {AI_NAME} about this
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className="ss-empty">No pathways match your search.</p>
+        )}
+        <p className="ss-muted" style={{ margin: 0 }}>
+          Match scores are guides, not decisions. Talk to your teacher or career guide before you choose.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Learning materials                                                  */
+/* ------------------------------------------------------------------ */
+
+function MaterialsCard({
+  materials,
+  onDownload,
+}: {
+  materials: Material[];
+  onDownload?: (kind: DownloadKind, id: string) => void;
+}) {
+  const [subject, setSubject] = useState("All");
+  const [kind, setKind] = useState("All");
+  const subjects = useMemo(() => Array.from(new Set(materials.map((m) => m.subject))), [materials]);
+  const kinds = useMemo(() => Array.from(new Set(materials.map((m) => m.kind))), [materials]);
+  const shown = materials.filter((m) => (subject === "All" || m.subject === subject) && (kind === "All" || m.kind === kind));
+
+  return (
+    <section className="ss-card ss-panel" aria-labelledby="materials-title">
+      <header>
+        <h3 id="materials-title">Notes, past papers and revision packs</h3>
+        <span className="ss-count">
+          {shown.length} of {materials.length} PDFs
+        </span>
+      </header>
+      <div className="ss-pbody">
+        <div className="ss-toolbar" style={{ margin: 0 }}>
+          <label className="ss-lab">
+            Subject
+            <select className="ss-input ss-input-auto" value={subject} onChange={(e) => setSubject(e.target.value)}>
+              <option value="All">All subjects</option>
+              {subjects.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="ss-lab">
+            Type
+            <select className="ss-input ss-input-auto" value={kind} onChange={(e) => setKind(e.target.value)}>
+              <option value="All">All types</option>
+              {kinds.map((k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
+        {shown.length ? (
+          <div className="ss-scroll">
+            <ul className="ss-list ss-mat">
+              {shown.map((m) => (
+                <li key={m.id}>
+                  <span className="ss-tag">{m.kind}</span>
+                  <div>
+                    <strong>{m.title}</strong>
+                    <small>
+                      {m.subject} · PDF · {m.sizeLabel} · {m.addedLabel}
+                    </small>
+                  </div>
+                  <DownloadButton kind="material" id={m.id} label="Download" what={m.title} url={m.url} onDownload={onDownload} />
+                </li>
+              ))}
+            </ul>
+          </div>
+        ) : (
+          <p className="ss-empty">No materials match these filters.</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Announcements                                                       */
+/* ------------------------------------------------------------------ */
+
+type NoticeFilter = "All" | "Unread" | Notice["tag"];
+const NOTICE_FILTERS: NoticeFilter[] = ["All", "Unread", "School", "Class", "Finance"];
+
+function AnnouncementsPage({
+  notices,
+  onRead,
+  onReadAll,
+}: {
+  notices: Notice[];
+  onRead: (id: string) => void;
+  onReadAll: () => void;
+}) {
+  const [filter, setFilter] = useState<NoticeFilter>("All");
+  const unread = notices.filter((n) => n.unread).length;
+  const shown = notices.filter((n) => (filter === "All" ? true : filter === "Unread" ? n.unread : n.tag === filter));
+
+  return (
+    <section className="ss-card ss-panel" aria-labelledby="notices-title">
+      <header>
+        <h3 id="notices-title">Announcements</h3>
+        <span className="ss-count">{unread} unread</span>
+      </header>
+      <div className="ss-pbody">
+        <div className="ss-toolbar" style={{ margin: 0, justifyContent: "space-between" }}>
+          <div className="ss-seg ss-seg-lg" role="group" aria-label="Filter announcements">
+            {NOTICE_FILTERS.map((f) => (
+              <button key={f} type="button" className={filter === f ? "is-on" : ""} aria-pressed={filter === f} onClick={() => setFilter(f)}>
+                {f}
+              </button>
+            ))}
+          </div>
+          {unread > 0 ? (
+            <button type="button" className="ss-link-btn" onClick={onReadAll}>
+              Mark all as read
+            </button>
+          ) : null}
+        </div>
+        {shown.length ? (
+          <ul className="ss-list ss-news">
+            {shown.map((n) => (
+              <li key={n.id} className={n.unread ? "is-unread" : "is-read"}>
+                <span className={`ss-tag${n.tag === "Finance" ? " warn" : ""}`}>{n.tag}</span>
+                <div>
+                  <strong>{n.title}</strong>
+                  <small>{n.meta}</small>
+                </div>
+                {n.unread ? (
+                  <>
+                    <span className="ss-tag warn">New</span>
+                    <button type="button" className="ss-btn ss-btn-sm" onClick={() => onRead(n.id)} aria-label={`Mark as read: ${n.title}`}>
+                      Mark as read
+                    </button>
+                  </>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="ss-empty">Nothing to show here.</p>
+        )}
+      </div>
+    </section>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* AI: Mwalimu AI                                                      */
 /* ------------------------------------------------------------------ */
 
 function ConsentTag({ ok }: { ok: boolean }) {
@@ -1918,7 +2662,7 @@ function ChatCard({
 }: {
   ai: LearnerDashboardData["ai"];
   onAsk?: (q: string) => void;
-  onNavigate?: (key: string) => void;
+  onNavigate: (key: string) => void;
 }) {
   const [question, setQuestion] = useState("");
   const ok = ai.consentOnRecord;
@@ -1932,14 +2676,14 @@ function ChatCard({
   };
 
   return (
-    <section id="ai-chat" className="ss-card ss-panel" aria-labelledby="chat-title">
+    <section className="ss-card ss-panel" aria-labelledby="chat-title">
       <header>
-        <h3 id="chat-title">AI Chat</h3>
+        <h3 id="chat-title">Chat</h3>
         <ConsentTag ok={ok} />
       </header>
       <div className="ss-pbody">
         <p className="ss-muted" style={{ margin: 0 }}>
-          Ask a quick question about schoolwork, revision or exams. For a guided lesson, use the AI Tutor.
+          Ask a quick question about schoolwork, revision or exams. For a guided lesson, use the Tutor.
         </p>
         <form onSubmit={submit} style={{ display: "flex", flexDirection: "column", gap: 6 }}>
           <label className="ss-lab" htmlFor="chat-q">
@@ -1972,7 +2716,7 @@ function ChatCard({
             <strong className="ss-h4">Recent chats</strong>
             <div className="ss-shortcuts">
               {ai.chat.recent.map((c) => (
-                <button key={c.id} type="button" className="ss-shortcut" onClick={() => onNavigate?.(`chat-${c.id}`)}>
+                <button key={c.id} type="button" className="ss-shortcut" onClick={() => onNavigate(`chat-${c.id}`)}>
                   <span>{c.title}</span>
                   <small>{c.when}</small>
                 </button>
@@ -1981,7 +2725,7 @@ function ChatCard({
           </>
         ) : null}
         <div className="ss-btn-row">
-          <button type="button" className="ss-btn" onClick={() => onNavigate?.("chat")}>
+          <button type="button" className="ss-btn" onClick={() => onNavigate("chat")}>
             Open full chat
           </button>
         </div>
@@ -2008,7 +2752,7 @@ function TutorCard({
   ai: LearnerDashboardData["ai"];
   subjects: string[];
   onStart?: (r: TutorRequest) => void;
-  onNavigate?: (key: string) => void;
+  onNavigate: (key: string) => void;
 }) {
   const [subject, setSubject] = useState(subjects[0] ?? "");
   const [topic, setTopic] = useState("");
@@ -2025,9 +2769,9 @@ function TutorCard({
   };
 
   return (
-    <section id="ai-tutor" className="ss-card ss-panel" aria-labelledby="tutor-title">
+    <section className="ss-card ss-panel" aria-labelledby="tutor-title">
       <header>
-        <h3 id="tutor-title">AI Tutor</h3>
+        <h3 id="tutor-title">Tutor</h3>
         <ConsentTag ok={ok} />
       </header>
       <div className="ss-pbody">
@@ -2096,11 +2840,11 @@ function TutorCard({
         ) : null}
 
         <div className="ss-shortcuts">
-          <button type="button" className="ss-shortcut" onClick={() => onNavigate?.("tutor-resume")}>
+          <button type="button" className="ss-shortcut" onClick={() => onNavigate("tutor-resume")}>
             <span>Continue: {tutor.resumeTopic}</span>
             <small>{tutor.resumeWhen}</small>
           </button>
-          <button type="button" className="ss-shortcut" onClick={() => onNavigate?.("tutor-saved")}>
+          <button type="button" className="ss-shortcut" onClick={() => onNavigate("tutor-saved")}>
             <span>Saved explanations</span>
             <small>{tutor.savedCount} saved</small>
           </button>
@@ -2114,146 +2858,307 @@ function TutorCard({
 }
 
 /* ------------------------------------------------------------------ */
-/* Career pathway recommender                                          */
+/* Dashboard: header and navigation tiles only                         */
 /* ------------------------------------------------------------------ */
 
-function CareerCard({
-  career,
-  progress,
-  onNavigate,
-}: {
-  career: LearnerDashboardData["career"];
-  progress: Progress;
-  onNavigate?: (key: string) => void;
-}) {
-  const latest = progress.stats[progress.stats.length - 1];
-  const strengths = latest ? [...latest.exam.scores].sort((a, b) => b.score - a.score).slice(0, 3) : [];
-  const pathways = useMemo(() => [...career.pathways].sort((a, b) => b.match - a.match), [career.pathways]);
+/** One line under each tile title. */
+const TILE_BLURBS: Record<PageKey, string> = {
+  home: "",
+  profile: "Your details on record",
+  "academic-transcript": "Exam results and report cards",
+  "academic-dashboard": "Progress, rank and study plan",
+  "fees-pay": "Pay a term's balance",
+  "fees-structure": "What each term costs",
+  "fees-statement": "Balances, payments and receipts",
+  timetable: "Weekly lessons, breaks and rooms",
+  "career-recommender": "Suggestions from your results",
+  "career-explorer": "Browse pathways and careers",
+  materials: "Notes, past papers, revision packs",
+  announcements: "School, class and finance notices",
+  ai: "Chat and step-by-step tutor",
+};
 
+type Tone = "blue" | "green" | "amber" | "purple";
+
+/** Groups shown on the dashboard. Every tile is a real route. */
+const HUB: { label: string; tone: Tone; keys: PageKey[] }[] = [
+  { label: "Overview", tone: "amber", keys: ["profile"] },
+  { label: "Academics", tone: "blue", keys: ["academic-transcript", "academic-dashboard"] },
+  { label: "Finances", tone: "green", keys: ["fees-pay", "fees-structure", "fees-statement"] },
+  { label: "Schedule", tone: "blue", keys: ["timetable"] },
+  { label: "Career pathway", tone: "purple", keys: ["career-recommender", "career-explorer"] },
+  { label: "Learning", tone: "blue", keys: ["materials"] },
+  { label: "Communication", tone: "amber", keys: ["announcements"] },
+  { label: "AI", tone: "purple", keys: ["ai"] },
+];
+
+function HomeHero({ data, latest, outstanding }: { data: LearnerDashboardData; latest?: ExamStat; outstanding: number }) {
+  const stats: { icon: IconName; label: string; value: string }[] = [
+    { icon: "progress", label: "Average", value: latest ? `${Math.round(latest.me)}%` : "–" },
+    { icon: "profile", label: "Stream rank", value: latest ? ordinal(latest.exam.streamPosition) : "–" },
+    { icon: "payments", label: `Balance (${data.fees.currency})`, value: fmt(outstanding) },
+  ];
   return (
-    <section id="career" className="ss-card ss-panel" aria-labelledby="career-title">
-      <header>
-        <h3 id="career-title">Career pathway recommender</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onNavigate?.("career-recommender")}>
-          Open the recommender
-        </button>
-      </header>
-      <div className="ss-pbody">
-        <div>
-          <div className="ss-bar" role="progressbar" aria-valuenow={career.profilePercent} aria-valuemin={0} aria-valuemax={100} aria-label="Interest profile progress">
-            <i style={{ width: `${career.profilePercent}%` }} />
-          </div>
-          <p className="ss-muted" style={{ margin: "8px 0 0" }}>
-            Interest and strengths profile: {career.profilePercent}% complete.
-            {career.profilePercent < 100 ? " Finish it to sharpen these suggestions." : ""}
-          </p>
+    <section className="ss-hero ss-home-hero" aria-label="Welcome">
+      <div className="ss-hero-text">
+        <span className="ss-eyebrow">
+          {data.learner.classLabel} · {data.termLabel}
+        </span>
+        <h2>
+          {greeting()}, {data.learner.firstName}
+        </h2>
+        <p>Senior School Learner Portal. Jump straight to what you need below.</p>
+        <div className="ss-hero-btns">
+          <Link to={PAGE_PATHS["academic-transcript"]} className="ss-btn ss-btn-gold">
+            <Icon name="exams" size={16} />
+            Academic transcript
+          </Link>
+          <Link to={PAGE_PATHS["fees-pay"]} className="ss-btn ss-btn-ghost">
+            <Icon name="payments" size={16} />
+            Pay fees
+          </Link>
         </div>
-
-        {strengths.length ? (
-          <div>
-            <strong className="ss-h4">Your strongest subjects right now</strong>
-            <div className="ss-chips" style={{ marginTop: 8 }}>
-              {strengths.map((s) => (
-                <span className="ss-tag" key={s.subject}>
-                  {s.subject} {s.score}
-                </span>
-              ))}
-            </div>
+      </div>
+      <div className="ss-home-chips">
+        {stats.map((st) => (
+          <div className="ss-home-chip" key={st.label}>
+            <span>
+              <Icon name={st.icon} size={13} />
+              {st.label}
+            </span>
+            <b>{st.value}</b>
           </div>
-        ) : null}
-
-        <strong className="ss-h4">Suggested pathways</strong>
-        {pathways.length ? (
-          <div className="ss-careers">
-            {pathways.map((c) => (
-              <div className="ss-career" key={c.id}>
-                <div className="ss-career-head">
-                  <strong>{c.title}</strong>
-                  <span className="ss-tag ok">{c.match}% match</span>
-                </div>
-                <div className="ss-bar" role="progressbar" aria-valuenow={c.match} aria-valuemin={0} aria-valuemax={100} aria-label={`${c.title} match`}>
-                  <i style={{ width: `${c.match}%` }} />
-                </div>
-                <p>{c.why}</p>
-                {c.subjects.length ? <small>Builds on {c.subjects.join(", ")}</small> : null}
-                <div>
-                  <button type="button" className="ss-btn ss-btn-sm" onClick={() => onNavigate?.(`career-pathway-${c.id}`)}>
-                    View pathway
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="ss-empty">Complete your interest profile to get your first suggestions.</p>
-        )}
-
-        <div className="ss-btn-row">
-          <button type="button" className="ss-btn ss-btn-primary" onClick={() => onNavigate?.("career-profile")}>
-            {career.profilePercent < 100 ? "Continue profile" : "Review profile"}
-          </button>
-          <button type="button" className="ss-btn" onClick={() => onNavigate?.("career-pathways")}>
-            Explore all pathways
-          </button>
-        </div>
-        <p className="ss-muted" style={{ margin: 0 }}>
-          These are ideas, not decisions. Suggestions come from your results and interests, and you can change or remove any of them.
-        </p>
+        ))}
       </div>
     </section>
   );
 }
 
-/* ------------------------------------------------------------------ */
-/* Announcements                                                       */
-/* ------------------------------------------------------------------ */
+function HomePage({
+  data,
+  latest,
+  outstanding,
+  unread,
+}: {
+  data: LearnerDashboardData;
+  latest?: ExamStat;
+  outstanding: number;
+  unread: number;
+}) {
+  const [q, setQ] = useState("");
+  const searchRef = useRef<HTMLInputElement>(null);
+  const needle = q.trim().toLowerCase();
 
-function AnnouncementsCard({ notices, onNavigate }: { notices: Notice[]; onNavigate?: (key: string) => void }) {
+  /* Press "/" anywhere on the page to jump to the search box. */
+  useEffect(() => {
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      const t = e.target as HTMLElement | null;
+      if (e.key !== "/" || e.metaKey || e.ctrlKey || e.altKey) return;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      e.preventDefault();
+      searchRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  /* Groups with the most tiles come first. */
+  const groups = useMemo(
+    () =>
+      HUB.map((g) => ({
+        ...g,
+        keys: g.keys.filter((k) => !needle || `${PAGES[k].label} ${TILE_BLURBS[k]} ${g.label}`.toLowerCase().includes(needle)),
+      }))
+        .filter((g) => g.keys.length)
+        .sort((a, b) => b.keys.length - a.keys.length),
+    [needle],
+  );
+
   return (
-    <section id="announcements" className="ss-card ss-panel" aria-labelledby="notices-title">
-      <header>
-        <h3 id="notices-title">Announcements</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onNavigate?.("announcements")}>
-          See all
-        </button>
-      </header>
-      <ul className="ss-list ss-news" style={{ marginTop: 4 }}>
-        {notices.map((n) => (
-          <li key={n.id} className={n.unread ? "is-unread" : "is-read"}>
-            <span className={`ss-tag${n.tag === "Finance" ? " warn" : ""}`}>{n.tag}</span>
-            <div>
-              <strong>{n.title}</strong>
-              <small>{n.meta}</small>
+    <>
+      <HomeHero data={data} latest={latest} outstanding={outstanding} />
+
+      <div className="ss-quick-head">
+        <h2>
+          <span className="ss-bolt" aria-hidden="true">
+            <Icon name="bolt" size={16} />
+          </span>
+          Quick Navigation
+        </h2>
+        <div className="ss-qsearch">
+          <Icon name="search" size={16} />
+          <input
+            ref={searchRef}
+            type="search"
+            placeholder="Search tools..."
+            aria-label="Search pages"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+          />
+          <kbd aria-hidden="true">/</kbd>
+        </div>
+      </div>
+
+      {groups.length ? (
+        groups.map((group) => (
+          <section className="ss-quick-group" key={group.label} aria-label={group.label}>
+            <p className="ss-quick-label">
+              <span>{group.label}</span>
+              <i />
+              <b>{group.keys.length}</b>
+            </p>
+            <div className="ss-tiles">
+              {group.keys.map((key) => {
+                const meta = PAGES[key];
+                const badge = key === "announcements" ? unread : 0;
+                return (
+                  <Link key={key} to={PAGE_PATHS[key]} className="ss-tile" data-tone={group.tone}>
+                    <span className="ss-tile-icon" aria-hidden="true">
+                      <Icon name={meta.icon} />
+                    </span>
+                    <span className="ss-tile-text">
+                      <strong>{meta.label}</strong>
+                      <small>{TILE_BLURBS[key]}</small>
+                    </span>
+                    {badge ? (
+                      <em className="ss-tile-badge">
+                        <span className="ss-sr">{badge} unread</span>
+                        <span aria-hidden="true">{badge}</span>
+                      </em>
+                    ) : null}
+                    <span className="ss-tile-arrow" aria-hidden="true">
+                      →
+                    </span>
+                  </Link>
+                );
+              })}
             </div>
-            {n.unread ? <span className="ss-tag warn">New</span> : null}
-          </li>
-        ))}
-      </ul>
-    </section>
+          </section>
+        ))
+      ) : (
+        <p className="ss-empty">No pages match your search.</p>
+      )}
+    </>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* Page                                                                */
+/* Page shell and route-aware page                                     */
 /* ------------------------------------------------------------------ */
+
+const todayLabel = () =>
+  new Date().toLocaleDateString("en-KE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+
+export interface LearnerShellProps {
+  /** Which sidebar link is highlighted. */
+  page: PageKey;
+  learner?: LearnerDashboardData["learner"];
+  dateLabel?: string;
+  /** Unread announcements, shown as a badge on the Announcements link. */
+  unread?: number;
+  theme?: "light" | "dark";
+  /** Replaces the page title in the header. */
+  title?: string;
+  /** Short line under the header. Pass null to hide it. */
+  note?: string | null;
+  /** School crest shown in the sidebar instead of the "SP" mark. */
+  logoSrc?: string;
+  children: ReactNode;
+}
+
+/**
+ * The learner sidebar and header around any content. Use it to give your own
+ * pages (Timetable, PayFees and so on) the same sidebar:
+ *   <LearnerShell page="timetable"> ...your page... </LearnerShell>
+ */
+export function LearnerShell({
+  page,
+  learner = SAMPLE_DATA.learner,
+  dateLabel = todayLabel(),
+  unread = 0,
+  theme = "light",
+  title,
+  note,
+  logoSrc,
+  children,
+}: LearnerShellProps) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const mainRef = useRef<HTMLElement>(null);
+  const firstRender = useRef(true);
+  const meta = PAGES[page];
+  const shownNote = note === undefined ? meta.note : note;
+
+  /* Start each page at the top and move focus to it. */
+  useEffect(() => {
+    setMenuOpen(false);
+    if (firstRender.current) {
+      firstRender.current = false;
+      return;
+    }
+    window.scrollTo(0, 0);
+    mainRef.current?.focus({ preventScroll: true });
+  }, [page]);
+
+  return (
+    <div id="top" className="ss-shell ss-learner" data-theme={theme}>
+      <Sidebar learner={learner} open={menuOpen} page={page} badges={{ announcements: unread }} logoSrc={logoSrc} onClose={() => setMenuOpen(false)} />
+      <div className={`ss-scrim${menuOpen ? " is-open" : ""}`} onClick={() => setMenuOpen(false)} aria-hidden="true" />
+
+      <div className="ss-main">
+        <PageHeader title={title ?? meta.title} dateLabel={dateLabel} onOpenMenu={() => setMenuOpen(true)} />
+        <main className="ss-content" ref={mainRef} tabIndex={-1}>
+          {shownNote ? <p className="ss-page-note">{shownNote}</p> : null}
+          {children}
+        </main>
+      </div>
+    </div>
+  );
+}
 
 export default function LearnerDashboard({
   data = SAMPLE_DATA,
   theme = "light",
+  page = "home",
+  logoSrc,
   onNavigate,
   onTaskToggle,
   onAskChat,
   onStartTutor,
+  onPayFees,
+  onNoticeRead,
   onDownload,
 }: LearnerDashboardProps) {
+  const routerNavigate = useNavigate();
   const [tasks, setTasks] = useState<StudyTask[]>(data.tasks);
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [feesTab, setFeesTab] = useState<FeesTab>("balances");
-  const [activeKey, setActiveKey] = useState("dashboard");
+  const [readIds, setReadIds] = useState<Set<string>>(() => new Set());
+  const [focusPathway, setFocusPathway] = useState<string | null>(null);
 
   const progress = useMemo(() => buildProgress(data.exams), [data.exams]);
   const summary = useMemo(() => buildFeeSummary(data.fees), [data.fees]);
   const latest = progress.stats[progress.stats.length - 1];
+  const notices = useMemo(() => data.notices.map((n) => ({ ...n, unread: n.unread && !readIds.has(n.id) })), [data.notices, readIds]);
+  const unreadCount = notices.filter((n) => n.unread).length;
+  const tasksLeft = tasks.filter((t) => !t.done).length;
+  const tutorSubjects = progress.subjects.length ? progress.subjects : Array.from(new Set(data.materials.map((m) => m.subject)));
+
+  /** Opens a sidebar page as a real route. */
+  const navigate = (key: PageKey) => routerNavigate(PAGE_PATHS[key]);
+
+  /** Sends a key to a sidebar page when it belongs to one, otherwise to onNavigate. */
+  const go = (key: string) => {
+    if (isPage(key)) return navigate(key);
+    const alias = ALIASES[key];
+    if (alias) return navigate(alias);
+    if (key.startsWith("career-pathway-")) {
+      setFocusPathway(key.slice("career-pathway-".length));
+      return navigate("career-explorer");
+    }
+    if (key === "chat" || key === "tutor-resume" || key === "tutor-saved" || key.startsWith("chat-")) {
+      onNavigate?.(key);
+      return navigate("ai");
+    }
+    onNavigate?.(key);
+  };
 
   const toggleTask = (id: string) => {
     const target = tasks.find((t) => t.id === id);
@@ -2263,78 +3168,82 @@ export default function LearnerDashboard({
     onTaskToggle?.(id, done);
   };
 
-  const tasksLeft = tasks.filter((t) => !t.done).length;
-
-  const goTo = (id: string) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
-    if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "-1");
-    el.focus({ preventScroll: true });
+  const markRead = (id: string) => {
+    setReadIds((prev) => new Set(prev).add(id));
+    onNoticeRead?.(id);
   };
+  const markAllRead = () => notices.filter((n) => n.unread).forEach((n) => markRead(n.id));
 
-  const select = (item: NavItem) => {
-    setMenuOpen(false);
-    setActiveKey(item.key);
-    if (item.feesTab) setFeesTab(item.feesTab);
-    if (item.section) goTo(item.section);
-  };
-
-  const tutorSubjects = progress.subjects.length ? progress.subjects : Array.from(new Set(data.materials.map((m) => m.subject)));
-
-  return (
-    <div id="top" className="ss-shell" data-theme={theme}>
-      <Sidebar
-        data={data}
-        open={menuOpen}
-        activeKey={activeKey}
-        onClose={() => setMenuOpen(false)}
-        onSelect={select}
-        onNavigate={onNavigate}
-      />
-      <div className={`ss-scrim${menuOpen ? " is-open" : ""}`} onClick={() => setMenuOpen(false)} aria-hidden="true" />
-
-      <div className="ss-main">
-        <PageHeader dateLabel={data.dateLabel} onOpenMenu={() => setMenuOpen(true)} />
-
-        <main className="ss-content">
-          <Hero data={data} latest={latest} outstanding={summary.outstanding} tasksLeft={tasksLeft} onGoto={goTo} />
-
-          <SectionHead id="progress" title="Academic progress" note="How you are doing, and how that compares with your stream and your grade." />
+  let body: ReactNode;
+  switch (page) {
+    case "home":
+      body = <HomePage data={data} latest={latest} outstanding={summary.outstanding} unread={unreadCount} />;
+      break;
+    case "profile":
+      body = <ProfilePage data={data} onNavigate={go} />;
+      break;
+    case "academic-transcript":
+      body = (
+        <>
+          <ExamResultsCard progress={progress} />
+          <ResultsDownloadsCard progress={progress} onDownload={onDownload} />
+        </>
+      );
+      break;
+    case "academic-dashboard":
+      body = (
+        <>
+          <Hero data={data} latest={latest} outstanding={summary.outstanding} tasksLeft={tasksLeft} onGoto={navigate} />
           <KpiRow stats={progress.stats} attendance={data.attendance} />
           <div className="ss-two">
             <TrendCard stats={progress.stats} />
             <SubjectCompareCard stats={progress.stats} />
           </div>
           <HeatmapCard progress={progress} />
-          <ExamResultsCard progress={progress} />
           <div className="ss-two">
             <PlanCard tasks={tasks} onToggle={toggleTask} />
-            <TopicsCard topics={data.topics} onNavigate={onNavigate} />
+            <TopicsCard topics={data.topics} onNavigate={go} />
           </div>
+        </>
+      );
+      break;
+    case "fees-pay":
+      body = <PayFeesPage fees={data.fees} summary={summary} onPay={onPayFees} onGoto={navigate} />;
+      break;
+    case "fees-structure":
+      body = <FeeStructurePage fees={data.fees} onGoto={navigate} onDownload={onDownload} />;
+      break;
+    case "fees-statement":
+      body = <StatementCard fees={data.fees} summary={summary} onGoto={navigate} onNavigate={go} onDownload={onDownload} />;
+      break;
+    case "timetable":
+      body = <TimetablePage entries={data.timetable} />;
+      break;
+    case "career-recommender":
+      body = <RecommenderPage career={data.career} progress={progress} onGoto={navigate} onNavigate={go} />;
+      break;
+    case "career-explorer":
+      body = <ExplorerPage career={data.career} focusId={focusPathway} onGoto={navigate} />;
+      break;
+    case "materials":
+      body = <MaterialsCard materials={data.materials} onDownload={onDownload} />;
+      break;
+    case "announcements":
+      body = <AnnouncementsPage notices={notices} onRead={markRead} onReadAll={markAllRead} />;
+      break;
+    case "ai":
+      body = (
+        <div className="ss-ai">
+          <ChatCard ai={data.ai} onAsk={onAskChat} onNavigate={go} />
+          <TutorCard ai={data.ai} subjects={tutorSubjects} onStart={onStartTutor} onNavigate={go} />
+        </div>
+      );
+      break;
+  }
 
-          <SectionHead title="Learning materials" note="Download notes, past papers and your report cards as PDFs." />
-          <div className="ss-two">
-            <MaterialsCard materials={data.materials} onDownload={onDownload} />
-            <ResultsDownloadsCard progress={progress} onDownload={onDownload} />
-          </div>
-
-          <SectionHead title="Fees" note="Your fee structure, payments, balances, receipts and a summary of how you have paid." />
-          <FeesCard fees={data.fees} summary={summary} tab={feesTab} onTab={setFeesTab} onNavigate={onNavigate} onDownload={onDownload} />
-
-          <SectionHead title="AI learning support" note="Use Chat for quick questions and the Tutor for lessons." />
-          <div className="ss-ai">
-            <ChatCard ai={data.ai} onAsk={onAskChat} onNavigate={onNavigate} />
-            <TutorCard ai={data.ai} subjects={tutorSubjects} onStart={onStartTutor} onNavigate={onNavigate} />
-          </div>
-
-          <SectionHead title="Career pathways" note="Ideas for what to study next, based on your results and interests." />
-          <CareerCard career={data.career} progress={progress} onNavigate={onNavigate} />
-
-          <AnnouncementsCard notices={data.notices} onNavigate={onNavigate} />
-        </main>
-      </div>
-    </div>
+  return (
+    <LearnerShell page={page} learner={data.learner} dateLabel={data.dateLabel} unread={unreadCount} theme={theme} logoSrc={logoSrc} note={page === "home" ? null : undefined}>
+      {body}
+    </LearnerShell>
   );
 }
