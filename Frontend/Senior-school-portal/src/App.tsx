@@ -22,6 +22,10 @@ import FeeStatements from './Student/Finance/FeeStatements'
 import PathwayRecommender from './Student/CareerPathways/PathwayRecommender'
 import Pathways from './Student/CareerPathways/Pathways'
 import Profile from './Student/Profile'
+import AcademicOverview from './Hoi/AcademicOverview'
+import FinanceReports from './Hoi/Finances/FinanceReports'
+import AiInsights from './Hoi/AI/AiInsights'
+import AiControl from './Hoi/AI/AiControl'
 
 
 function App() {
@@ -41,13 +45,17 @@ function App() {
         <Route path="Academics/Results" element={<AcademicResults/>}/>
         <Route path="/Academic/LearningMaterials" element={<LearningMaterials/>}/>
         <Route path="Academic/Timetable" element={<Timetable/>}/>
+        <Route path="Academic/Overview" element={<AcademicOverview/>}/>
         <Route path="Finance/PayFees" element={<PayFees/>}/>
         <Route path="/Finance/Fee/Structure" element={<FeeStructure/>}/>
         <Route path="/Finance/Fee/statement" element={<FeeStatements/>}/>
+        <Route path="/Finance/Reports" element={<FinanceReports/>}/>
         <Route path="/CareerPathways" element={<PathwayRecommender/>}/>
         <Route path="/Explore/Pathways" element={<Pathways/>}/>
         <Route path="/AI/Chat" element={<AiTutorPage/>}/>
         <Route path="/Students" element={<Students/>}/>
+        <Route path="Hoi/AI/Insights" element={<AiInsights/>}/>
+        <Route path="Hoi/AI/Controls" element={<AiControl/>}/>
         <Route path="/Learner/Profile"element={<Profile/>}/>
     </Routes>
   )
