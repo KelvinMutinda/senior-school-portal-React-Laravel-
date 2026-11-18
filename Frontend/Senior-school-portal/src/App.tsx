@@ -21,6 +21,7 @@ import FeeStructure from './Student/Finance/FeeStructure'
 import FeeStatements from './Student/Finance/FeeStatements'
 import PathwayRecommender from './Student/CareerPathways/PathwayRecommender'
 import Pathways from './Student/CareerPathways/Pathways'
+import Profile from './Student/Profile'
 
 
 function App() {
@@ -43,10 +44,11 @@ function App() {
         <Route path="Finance/PayFees" element={<PayFees/>}/>
         <Route path="/Finance/Fee/Structure" element={<FeeStructure/>}/>
         <Route path="/Finance/Fee/statement" element={<FeeStatements/>}/>
-         <Route path="/CareerPathways" element={<PathwayRecommender/>}/>
-          <Route path="/Explore/Pathways" element={<Pathways/>}/>
+        <Route path="/CareerPathways" element={<PathwayRecommender/>}/>
+        <Route path="/Explore/Pathways" element={<Pathways/>}/>
         <Route path="/AI/Chat" element={<AiTutorPage/>}/>
         <Route path="/Students" element={<Students/>}/>
+        <Route path="/Learner/Profile"element={<Profile/>}/>
     </Routes>
   )
 }
