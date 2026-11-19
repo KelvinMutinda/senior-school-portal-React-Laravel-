@@ -1,18 +1,6 @@
 import { useMemo, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 
-/* ==========================================================================
-   TeacherDashboard
-   Self-contained: it renders its own sidebar and header, so it no longer needs
-   DashboardLayout. Styles live in App.css (sections "Dashboard shell",
-   "Header section", "Teacher dashboard additions", "Learner dashboard
-   additions" and "Teacher dashboard redesign"). Teachers never see fee data.
-   ========================================================================== */
-
-/* ------------------------------------------------------------------ */
-/* Types                                                               */
-/* ------------------------------------------------------------------ */
-
 export type AttendanceStatus = "P" | "A" | "L" | "E"; // present, absent, late, excused
 
 export interface ClassInfo {
@@ -141,6 +129,26 @@ export interface TeacherDashboardProps {
   onPostNotice?: (classId: string, message: string) => void | Promise<void>;
 }
 
+/* ------------------------------------------------------------------ */
+/* Routes: one place, used by the sidebar, the quick nav and the cards */
+/* ------------------------------------------------------------------ */
+
+const ROUTE = {
+  dashboard: "/Teacher/Dashboard",
+  classes: "/Academics/classes",
+  students: "/Students",
+  attendance: "/Academics/Attendance",
+  marks: "/Results/Upload/Results",
+  results: "/Results/View/Results",
+  progress: "/Academics/Progress",
+  timetable: "/Academics/Timetable",
+  materials: "/Academic/LearningMaterials",
+  upload: "/Upload/LearningMaterial",
+  generate: "/AI/Chat",
+  tutor: "/AI/Chat",
+  announcements: "/Announcements",
+  comments: "/Academics/Comments",
+} as const;
 /* ------------------------------------------------------------------ */
 /* Sample data (replace with API results)                              */
 /* ------------------------------------------------------------------ */
@@ -277,7 +285,8 @@ type IconName =
   | "logout"
   | "chevron"
   | "menu"
-  | "close";
+  | "close"
+  | "bolt";
 
 const ICON_PATHS: Record<IconName, ReactNode> = {
   dashboard: (
@@ -357,6 +366,7 @@ const ICON_PATHS: Record<IconName, ReactNode> = {
   chevron: <path d="M6 9l6 6 6-6" />,
   menu: <path d="M4 6h16M4 12h16M4 18h16" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
+  bolt: <path d="M13 2L4 14h7l-1 8 9-12h-7z" />,
 };
 
 function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
@@ -378,16 +388,16 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Sidebar and header                                                  */
+/* Sidebar menu                                                        */
 /* ------------------------------------------------------------------ */
 
 interface NavItem {
   key: string;
   label: string;
+  hint: string; // short description shown on the quick navigation tiles
   route: string;
   icon: IconName;
   badge?: number;
-  classTeacherOnly?: boolean;
 }
 
 interface NavGroup {
@@ -395,58 +405,46 @@ interface NavGroup {
   items: NavItem[];
 }
 
-function buildMenu(badges: { marks: number; messages: number }, isClassTeacher: boolean): NavGroup[] {
-  const groups: NavGroup[] = [
+function buildMenu(badges: { marks: number }): NavGroup[] {
+  return [
     {
       group: "Overview",
-      items: [{ key: "dashboard", label: "Dashboard", route: "/dashboard", icon: "dashboard" }],
+      items: [{ key: "dashboard", label: "Dashboard", hint: "Your day at a glance", route: ROUTE.dashboard, icon: "dashboard" }],
     },
     {
       group: "Class management",
       items: [
-        { key: "classes", label: "My classes", route: "/academics/classes", icon: "classes" },
-        { key: "students", label: "Learners", route: "/academics/students", icon: "students" },
-        { key: "attendance", label: "Attendance", route: "/academics/attendance", icon: "attendance" },
-        { key: "comments", label: "Report comments", route: "/academics/comments", icon: "comments", classTeacherOnly: true },
+        { key: "classes", label: "My classes", hint: "Your classes and rosters", route: ROUTE.classes, icon: "classes" },
+        { key: "students", label: "Learners", hint: "Learner directory and profiles", route: ROUTE.students, icon: "students" },
+        { key: "attendance", label: "Attendance", hint: "Registers and attendance records", route: ROUTE.attendance, icon: "attendance" },
       ],
     },
     {
       group: "Assessment",
       items: [
-        { key: "marks-entry", label: "Upload marks", route: "/academics/marks", icon: "marks", badge: badges.marks },
-        { key: "results", label: "View results", route: "/academics/results", icon: "results" },
-        { key: "progress", label: "Progress records", route: "/academics/progress", icon: "progress" },
+        { key: "marks-entry", label: "Upload marks", hint: "Enter or upload assessment marks", route: ROUTE.marks, icon: "marks", badge: badges.marks },
+        { key: "results", label: "View marks", hint: "Published results and analysis", route: ROUTE.results, icon: "results" },
+        { key: "progress", label: "Progress records", hint: "Learner and class progress over time", route: ROUTE.progress, icon: "progress" },
       ],
     },
     {
       group: "Teaching",
       items: [
-        { key: "timetable", label: "Timetable", route: "/academics/timetable", icon: "timetable" },
-        { key: "materials", label: "Learning materials", route: "/materials", icon: "materials" },
-        { key: "materials-upload", label: "Upload material", route: "/materials/upload", icon: "upload" },
-        { key: "ai-tools", label: "Generate material", route: "/ai/tools", icon: "generate" },
+        { key: "timetable", label: "Timetable", hint: "Your weekly lessons", route: ROUTE.timetable, icon: "timetable" },
+        { key: "materials", label: "Learning materials", hint: "Notes, revision packs, past papers", route: ROUTE.materials, icon: "materials" },
+        { key: "materials-upload", label: "Upload learning materials", hint: "Share files with your classes", route: ROUTE.upload, icon: "upload" },
+        { key: "ai-tools", label: "Generate learning material", hint: "Create notes, quizzes, flashcards", route: ROUTE.generate, icon: "generate" },
       ],
     },
     {
       group: "AI",
-      items: [
-        { key: "ai-tutor", label: "AI Tutor", route: "/ai/tutor", icon: "tutor" },
-        { key: "ai-insights", label: "AI insights", route: "/ai/insights", icon: "insights" },
-      ],
+      items: [{ key: "ai-tutor", label: "AI Mwalimu", hint: "Learner questions and weak topics", route: ROUTE.tutor, icon: "tutor" }],
     },
     {
       group: "Communication",
-      items: [
-        { key: "messages", label: "Messages", route: "/messages", icon: "messages", badge: badges.messages },
-        { key: "announcements", label: "Announcements", route: "/announcements", icon: "announcements" },
-      ],
-    },
-    {
-      group: "Account",
-      items: [{ key: "settings", label: "Settings", route: "/settings", icon: "settings" }],
+      items: [{ key: "announcements", label: "Announcements", hint: "Notices and publishing", route: ROUTE.announcements, icon: "announcements" }],
     },
   ];
-  return groups.map((g) => ({ ...g, items: g.items.filter((i) => isClassTeacher || !i.classTeacherOnly) }));
 }
 
 function Sidebar({
@@ -520,6 +518,10 @@ function Sidebar({
     </aside>
   );
 }
+
+/* ------------------------------------------------------------------ */
+/* Header                                                              */
+/* ------------------------------------------------------------------ */
 
 function Header({
   title,
@@ -652,60 +654,82 @@ function SectionHead({ title, note }: { title: string; note?: string }) {
 }
 
 /* ------------------------------------------------------------------ */
-/* Module cards                                                        */
+/* Quick navigation tiles (same items and routes as the sidebar)       */
 /* ------------------------------------------------------------------ */
 
-interface CardAction {
-  label: string;
-  onClick: () => void;
-}
-
-function ModuleCard({
-  icon,
-  title,
-  hint,
-  stat,
-  statLabel,
-  primary,
-  secondary,
-  children,
+function QuickNav({
+  menu,
+  activeKey,
+  onGo,
 }: {
-  icon: IconName;
-  title: string;
-  hint: string;
-  stat: string | number;
-  statLabel: string;
-  primary: CardAction;
-  secondary?: CardAction;
-  children?: ReactNode;
+  menu: NavGroup[];
+  activeKey: string;
+  onGo: (route: string, key: string) => void;
 }) {
+  const [q, setQ] = useState("");
+  const term = q.trim().toLowerCase();
+
+  const groups = menu
+    .filter((g) => g.group !== "Overview")
+    .map((g) => ({
+      ...g,
+      items: term ? g.items.filter((i) => i.label.toLowerCase().includes(term) || i.hint.toLowerCase().includes(term)) : g.items,
+    }))
+    .filter((g) => g.items.length > 0);
+
   return (
-    <article className="ss-card ss-mod">
-      <div className="ss-mod-head">
-        <span className="ss-mod-icon">
-          <Icon name={icon} />
-        </span>
-        <div>
-          <h3>{title}</h3>
-          <small>{hint}</small>
+    <section className="ss-quick" aria-labelledby="quick-nav-title">
+      <div className="ss-quick-head">
+        <h2 id="quick-nav-title">
+          <span className="ss-bolt" aria-hidden="true">
+            <Icon name="bolt" size={16} />
+          </span>
+          Quick navigation
+        </h2>
+        <div className="ss-quick-search">
+          <input type="search" placeholder="Search tools..." aria-label="Search tools" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
       </div>
-      <div className="ss-mod-stat">
-        <b>{stat}</b>
-        <span>{statLabel}</span>
-      </div>
-      <div className="ss-mod-body">{children}</div>
-      <div className="ss-mod-foot">
-        <button type="button" className="ss-btn ss-btn-primary ss-btn-sm" onClick={primary.onClick}>
-          {primary.label}
-        </button>
-        {secondary ? (
-          <button type="button" className="ss-link-btn" onClick={secondary.onClick}>
-            {secondary.label}
-          </button>
-        ) : null}
-      </div>
-    </article>
+
+      {groups.length ? (
+        groups.map((group) => (
+          <div className="ss-quick-group" key={group.group}>
+            <p className="ss-quick-label">
+              <span>{group.group}</span>
+              <i />
+              <b>{group.items.length}</b>
+            </p>
+            <div className="ss-tiles">
+              {group.items.map((item) => (
+                <a
+                  key={item.key}
+                  href={item.route}
+                  className="ss-tile"
+                  aria-current={item.key === activeKey ? "page" : undefined}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    onGo(item.route, item.key);
+                  }}
+                >
+                  <span className="ss-tile-icon">
+                    <Icon name={item.icon} />
+                  </span>
+                  <span className="ss-tile-text">
+                    <strong>{item.label}</strong>
+                    <small>{item.hint}</small>
+                  </span>
+                  {item.badge ? <em className="ss-tile-badge">{item.badge}</em> : null}
+                </a>
+              ))}
+            </div>
+          </div>
+        ))
+      ) : (
+        <p className="ss-empty" style={{ marginTop: 16 }}>
+          No pages match “{q.trim()}”.
+        </p>
+      )}
+    </section>
   );
 }
 
@@ -736,7 +760,7 @@ function ClassesCard({ classes, onGo }: { classes: ClassInfo[]; onGo: (route: st
     <section id="classes" className="ss-card ss-panel" aria-labelledby="classes-title">
       <header>
         <h3 id="classes-title">My classes</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onGo("/academics/classes", "classes")}>
+        <button type="button" className="ss-link-btn" onClick={() => onGo(ROUTE.classes, "classes")}>
           Manage classes
         </button>
       </header>
@@ -773,7 +797,7 @@ function ClassesCard({ classes, onGo }: { classes: ClassInfo[]; onGo: (route: st
                     <small>{c.marksSubmitted}%</small>
                   </td>
                   <td>
-                    <button type="button" className="ss-btn ss-btn-sm" onClick={() => onGo("/academics/classes", `class-${c.id}`)}>
+                    <button type="button" className="ss-btn ss-btn-sm" onClick={() => onGo(ROUTE.classes, `class-${c.id}`)}>
                       Open
                       <span className="ss-sr"> {c.name}</span>
                     </button>
@@ -805,7 +829,7 @@ function LessonsCard({
     <section id="timetable" className="ss-card ss-panel" aria-labelledby="lessons-title">
       <header>
         <h3 id="lessons-title">Today's lessons</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onGo("/academics/timetable", "timetable")}>
+        <button type="button" className="ss-link-btn" onClick={() => onGo(ROUTE.timetable, "timetable")}>
           Full timetable
         </button>
       </header>
@@ -879,7 +903,7 @@ function AttendanceCard({
     <section id="attendance" className="ss-card ss-panel" aria-labelledby="att-title">
       <header>
         <h3 id="att-title">Quick attendance</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onGo("/academics/attendance", "attendance")}>
+        <button type="button" className="ss-link-btn" onClick={() => onGo(ROUTE.attendance, "attendance")}>
           Full register
         </button>
       </header>
@@ -966,8 +990,8 @@ function MarksCard({
     <section id="marks" className="ss-card ss-panel" aria-labelledby="marks-title">
       <header>
         <h3 id="marks-title">Marks to complete</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onGo("/academics/marks", "marks-entry")}>
-          Marks entry
+        <button type="button" className="ss-link-btn" onClick={() => onGo(ROUTE.marks, "marks-entry")}>
+          Upload marks
         </button>
       </header>
       {pending.length ? (
@@ -982,7 +1006,7 @@ function MarksCard({
                 </small>
               </div>
               <span className={`ss-tag ${m.status === "Returned" ? "warn" : ""}`}>{m.status}</span>
-              <button type="button" className="ss-btn ss-btn-sm" onClick={() => onGo("/academics/marks", "marks-entry")}>
+              <button type="button" className="ss-btn ss-btn-sm" onClick={() => onGo(ROUTE.marks, "marks-entry")}>
                 {m.status === "Not started" ? "Start" : "Continue"}
               </button>
             </li>
@@ -992,7 +1016,7 @@ function MarksCard({
         <p className="ss-empty">All marks are in. Nothing is waiting.</p>
       )}
       <div className="ss-btn-row" style={{ marginTop: 14 }}>
-        <button type="button" className="ss-btn" onClick={() => onGo("/academics/marks", "marks-upload")}>
+        <button type="button" className="ss-btn" onClick={() => onGo(ROUTE.marks, "marks-upload")}>
           Upload marks (CSV)
         </button>
       </div>
@@ -1013,8 +1037,8 @@ function ResultsCard({
     <section id="results" className="ss-card ss-panel" aria-labelledby="results-title">
       <header>
         <h3 id="results-title">Latest results</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onGo("/academics/results", "results")}>
-          View results
+        <button type="button" className="ss-link-btn" onClick={() => onGo(ROUTE.results, "results")}>
+          View marks
         </button>
       </header>
       <div className="ss-pbody">
@@ -1070,7 +1094,7 @@ function StudentFinderCard({
     <section id="students" className="ss-card ss-panel" aria-labelledby="students-title">
       <header>
         <h3 id="students-title">Learner details</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onGo("/academics/students", "students")}>
+        <button type="button" className="ss-link-btn" onClick={() => onGo(ROUTE.students, "students")}>
           All learners
         </button>
       </header>
@@ -1081,8 +1105,8 @@ function StudentFinderCard({
         </label>
         {term ? (
           matches.length ? (
-            <ul className="ss-list" aria-live="polite">
-              {matches.slice(0, 5).map((l) => (
+            <ul className="ss-list">
+              {matches.slice(0, 8).map((l) => (
                 <li key={l.id}>
                   <div>
                     <strong>{l.name}</strong>
@@ -1090,22 +1114,18 @@ function StudentFinderCard({
                       Adm. {l.admNo} · {nameOf(l.classId)}
                     </small>
                   </div>
-                  <button type="button" className="ss-btn ss-btn-sm" onClick={() => onGo("/academics/students", `student-${l.id}`)}>
-                    View details
-                    <span className="ss-sr"> for {l.name}</span>
+                  <button type="button" className="ss-btn ss-btn-sm" onClick={() => onGo(ROUTE.students, `learner-${l.id}`)}>
+                    Open
+                    <span className="ss-sr"> {l.name}</span>
                   </button>
                 </li>
               ))}
             </ul>
           ) : (
-            <p className="ss-empty" aria-live="polite">
-              No learner matches "{q.trim()}".
-            </p>
+            <p className="ss-empty">No learner matches “{q.trim()}”.</p>
           )
         ) : (
-          <p className="ss-muted" style={{ margin: 0 }}>
-            Type a name or admission number to open a learner's details.
-          </p>
+          <p className="ss-muted">Type a name or admission number to find a learner.</p>
         )}
       </div>
     </section>
@@ -1125,70 +1145,164 @@ function ProgressCard({
     <section id="progress" className="ss-card ss-panel" aria-labelledby="progress-title">
       <header>
         <h3 id="progress-title">Progress records</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onGo("/academics/progress", "progress")}>
-          Open records
+        <button type="button" className="ss-link-btn" onClick={() => onGo(ROUTE.progress, "progress")}>
+          All records
         </button>
       </header>
       <div className="ss-pbody">
-        {progress.map((p) => (
-          <div className="ss-prog-row" key={p.classId}>
-            <strong>{nameOf(p.classId)}</strong>
-            <Sparkline points={p.points} label={`${nameOf(p.classId)} class mean over the last ${p.points.length} assessments, from ${p.points[0]} to ${p.points[p.points.length - 1]}`} />
-            <small>
-              {p.improving} improving · {p.steady} steady · {p.declining} falling
-            </small>
-          </div>
-        ))}
-        <p className="ss-muted" style={{ margin: 0 }}>
-          Lines show the class mean over the last few assessments. Open the records for each learner's history.
-        </p>
+        {progress.length ? (
+          progress.map((p) => {
+            const first = p.points[0] ?? 0;
+            const last = p.points[p.points.length - 1] ?? 0;
+            const ch = change(last - first, " pts");
+            return (
+              <div className="ss-prog-row" key={p.classId}>
+                <strong>{nameOf(p.classId)}</strong>
+                <Sparkline points={p.points} label={`${nameOf(p.classId)} class mean over recent assessments`} />
+                <small>
+                  {p.improving} improving · {p.steady} steady · {p.declining} declining ·{" "}
+                  <span className={`ss-result-change ${ch.kind}`}>{ch.label}</span>
+                </small>
+              </div>
+            );
+          })
+        ) : (
+          <p className="ss-empty">Progress records appear after two or more assessments.</p>
+        )}
       </div>
     </section>
   );
 }
 
 /* ------------------------------------------------------------------ */
-/* Learning materials                                                  */
+/* Learning materials: list, upload and generate                       */
 /* ------------------------------------------------------------------ */
+
+function MaterialsCard({
+  materials,
+  classes,
+  nameOf,
+  onUpload,
+  onGo,
+}: {
+  materials: MaterialItem[];
+  classes: ClassInfo[];
+  nameOf: (id: string) => string;
+  onUpload?: (request: { classId: string; title: string; file: File }) => void | Promise<void>;
+  onGo: (route: string, key: string) => void;
+}) {
+  const [classId, setClassId] = useState(classes[0]?.id ?? "");
+  const [title, setTitle] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [fileKey, setFileKey] = useState(0);
+  const [sent, setSent] = useState<string | null>(null);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!file || !title.trim() || !classId) return;
+    await onUpload?.({ classId, title: title.trim(), file });
+    setSent(`“${title.trim()}” uploaded for ${nameOf(classId)}.`);
+    setTitle("");
+    setFile(null);
+    setFileKey((k) => k + 1);
+  };
+
+  return (
+    <section id="materials" className="ss-card ss-panel" aria-labelledby="mat-title">
+      <header>
+        <h3 id="mat-title">Learning materials</h3>
+        <button type="button" className="ss-link-btn" onClick={() => onGo(ROUTE.materials, "materials")}>
+          All materials
+        </button>
+      </header>
+      {materials.length ? (
+        <ul className="ss-list ss-mat">
+          {materials.map((m) => (
+            <li key={m.id}>
+              <div>
+                <strong>{m.title}</strong>
+                <small>
+                  {nameOf(m.classId)} · {m.kind} · {m.when}
+                </small>
+              </div>
+              <span className={`ss-tag ${m.status === "Published" ? "ok" : m.status === "Awaiting review" ? "warn" : "muted"}`}>{m.status}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="ss-empty">No materials yet.</p>
+      )}
+
+      <form className="ss-form" onSubmit={submit}>
+        <h4 className="ss-h4">Upload a material</h4>
+        <div className="ss-tform">
+          <label className="ss-lab">
+            Title
+            <input className="ss-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Term 3 revision pack" />
+          </label>
+          <label className="ss-lab">
+            Class
+            <select className="ss-input" value={classId} onChange={(e) => setClassId(e.target.value)}>
+              {classes.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="ss-lab ss-span2">
+            File
+            <input key={fileKey} className="ss-input" type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
+          </label>
+        </div>
+        <button type="submit" className="ss-btn ss-btn-primary" disabled={!file || !title.trim()}>
+          Upload material
+        </button>
+        {sent ? (
+          <p className="ss-sent" role="status">
+            {sent}
+          </p>
+        ) : null}
+      </form>
+    </section>
+  );
+}
 
 function GenerateCard({
   classes,
-  usage,
-  nameOf,
   onGenerate,
   onGo,
 }: {
   classes: ClassInfo[];
-  usage: TeacherData["aiUsage"];
-  nameOf: (id: string) => string;
-  onGenerate?: TeacherDashboardProps["onGenerate"];
+  onGenerate?: (request: { classId: string; topic: string; format: string }) => void | Promise<void>;
   onGo: (route: string, key: string) => void;
 }) {
-  const [classId, setClassId] = useState(classes[0]?.id ?? "");
   const [topic, setTopic] = useState("");
+  const [classId, setClassId] = useState(classes[0]?.id ?? "");
   const [format, setFormat] = useState(FORMATS[0]);
-  const [msg, setMsg] = useState<string | null>(null);
+  const [sent, setSent] = useState<string | null>(null);
 
-  const generate = async () => {
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
     const t = topic.trim();
-    if (!t) return;
+    if (!t || !classId) return;
     await onGenerate?.({ classId, topic: t, format });
-    setMsg(`${format} on "${t}" requested. Review and edit it before publishing to ${nameOf(classId)}.`);
+    setSent(`${format} on “${t}” sent for generation. It will appear under Learning materials for review.`);
     setTopic("");
   };
 
   return (
     <section id="generate" className="ss-card ss-panel" aria-labelledby="gen-title">
       <header>
-        <h3 id="gen-title">Generate material or a quiz</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onGo("/ai/tools", "ai-tools")}>
-          Saved items
+        <h3 id="gen-title">Generate learning material</h3>
+        <button type="button" className="ss-link-btn" onClick={() => onGo(ROUTE.generate, "ai-tools")}>
+          Open generator
         </button>
       </header>
-      <div className="ss-gen">
+      <form className="ss-gen" onSubmit={submit}>
         <label className="ss-lab">
           Topic
-          <input className="ss-input" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="e.g. Factorising quadratic equations" />
+          <input className="ss-input" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="e.g. Quadratic equations" />
         </label>
         <label className="ss-lab">
           Class
@@ -1204,412 +1318,194 @@ function GenerateCard({
           Format
           <select className="ss-input" value={format} onChange={(e) => setFormat(e.target.value)}>
             {FORMATS.map((f) => (
-              <option key={f}>{f}</option>
-            ))}
-          </select>
-        </label>
-        <button type="button" className="ss-btn ss-btn-primary" onClick={generate} disabled={!topic.trim()}>
-          Generate
-        </button>
-      </div>
-      {msg ? (
-        <p className="ss-sent" role="status">
-          {msg}
-        </p>
-      ) : null}
-      <p className="ss-note">
-        Generated content is labelled AI-assisted and must be reviewed by you before it reaches learners. This term: {usage.materialsThisTerm} items created.
-      </p>
-    </section>
-  );
-}
-
-function UploadCard({
-  classes,
-  nameOf,
-  onUpload,
-  onGo,
-}: {
-  classes: ClassInfo[];
-  nameOf: (id: string) => string;
-  onUpload?: TeacherDashboardProps["onUploadMaterial"];
-  onGo: (route: string, key: string) => void;
-}) {
-  const [classId, setClassId] = useState(classes[0]?.id ?? "");
-  const [title, setTitle] = useState("");
-  const [file, setFile] = useState<File | null>(null);
-  const [fileKey, setFileKey] = useState(0);
-  const [msg, setMsg] = useState<string | null>(null);
-
-  const upload = async () => {
-    const t = title.trim();
-    if (!t || !file) return;
-    await onUpload?.({ classId, title: t, file });
-    setMsg(`"${t}" uploaded for ${nameOf(classId)}.`);
-    setTitle("");
-    setFile(null);
-    setFileKey((k) => k + 1);
-  };
-
-  return (
-    <section id="upload" className="ss-card ss-panel" aria-labelledby="upload-title">
-      <header>
-        <h3 id="upload-title">Upload a material</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onGo("/materials/upload", "materials-upload")}>
-          Full upload page
-        </button>
-      </header>
-      <div className="ss-form">
-        <label className="ss-lab">
-          Title
-          <input className="ss-input" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Term 3 revision pack" />
-        </label>
-        <label className="ss-lab">
-          Class
-          <select className="ss-input" value={classId} onChange={(e) => setClassId(e.target.value)}>
-            {classes.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.name}
+              <option key={f} value={f}>
+                {f}
               </option>
             ))}
           </select>
         </label>
-        <label className="ss-lab">
-          File (PDF, Word or PowerPoint)
-          <input
-            key={fileKey}
-            className="ss-input"
-            type="file"
-            accept=".pdf,.doc,.docx,.ppt,.pptx"
-            onChange={(e) => setFile(e.target.files?.[0] ?? null)}
-          />
-        </label>
-        <button type="button" className="ss-btn ss-btn-primary" onClick={upload} disabled={!title.trim() || !file}>
-          <Icon name="upload" size={16} />
-          Upload
+        <button type="submit" className="ss-btn ss-btn-primary" disabled={!topic.trim()}>
+          Generate
         </button>
-      </div>
-      {msg ? (
+      </form>
+      {sent ? (
         <p className="ss-sent" role="status">
-          {msg}
+          {sent}
         </p>
       ) : null}
     </section>
   );
 }
 
-function MaterialsListCard({
-  materials,
-  nameOf,
-  onGo,
-}: {
-  materials: MaterialItem[];
-  nameOf: (id: string) => string;
-  onGo: (route: string, key: string) => void;
-}) {
-  const tone = (s: MaterialStatus) => (s === "Published" ? "ok" : s === "Awaiting review" ? "warn" : "muted");
-  return (
-    <section id="materials" className="ss-card ss-panel" aria-labelledby="materials-title">
-      <header>
-        <h3 id="materials-title">Recent materials</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onGo("/materials", "materials")}>
-          Material library
-        </button>
-      </header>
-      {materials.length ? (
-        <ul className="ss-list ss-mat">
-          {materials.map((m) => (
-            <li key={m.id}>
-              <span className="ss-tag">{m.kind}</span>
-              <div>
-                <strong>{m.title}</strong>
-                <small>
-                  {nameOf(m.classId)} · {m.when}
-                </small>
-              </div>
-              <span className={`ss-tag ${tone(m.status)}`}>{m.status}</span>
-              <button type="button" className="ss-btn ss-btn-sm" onClick={() => onGo("/materials", `material-${m.id}`)}>
-                {m.status === "Awaiting review" ? "Review" : "Open"}
-                <span className="ss-sr"> {m.title}</span>
-              </button>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="ss-empty">Upload or generate your first material to see it here.</p>
-      )}
-    </section>
-  );
-}
-
 /* ------------------------------------------------------------------ */
-/* AI Tutor                                                            */
+/* AI Mwalimu                                                          */
 /* ------------------------------------------------------------------ */
 
-function InsightsCard({
+function MwalimuCard({
+  topics,
   alerts,
+  usage,
   nameOf,
-  onAct,
+  onAssign,
+  onAlertAction,
   onGo,
 }: {
+  topics: TutorTopic[];
   alerts: WeaknessAlert[];
+  usage: TeacherData["aiUsage"];
   nameOf: (id: string) => string;
-  onAct: (id: string, action: "accept" | "dismiss") => void;
+  onAssign?: (request: { classId: string; topic: string }) => void | Promise<void>;
+  onAlertAction?: (alertId: string, action: "accept" | "dismiss") => void | Promise<void>;
   onGo: (route: string, key: string) => void;
 }) {
+  const [handled, setHandled] = useState<Record<string, "accept" | "dismiss">>({});
+  const [assigned, setAssigned] = useState<string | null>(null);
+  const open = alerts.filter((a) => !handled[a.id]);
+
+  const act = async (id: string, action: "accept" | "dismiss") => {
+    await onAlertAction?.(id, action);
+    setHandled((h) => ({ ...h, [id]: action }));
+  };
+
+  const assign = async (t: TutorTopic) => {
+    await onAssign?.({ classId: t.classId, topic: t.topic });
+    setAssigned(`${t.topic} assigned to ${nameOf(t.classId)} on AI Mwalimu.`);
+  };
+
   return (
-    <section id="insights" className="ss-card ss-panel" aria-labelledby="insights-title">
+    <section id="mwalimu" className="ss-card ss-panel" aria-labelledby="mwalimu-title">
       <header>
-        <h3 id="insights-title">AI insights for your classes</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onGo("/ai/insights", "ai-insights")}>
-          All insights
+        <h3 id="mwalimu-title">AI Mwalimu</h3>
+        <button type="button" className="ss-link-btn" onClick={() => onGo(ROUTE.tutor, "ai-tutor")}>
+          Open AI Mwalimu
         </button>
       </header>
-      {alerts.length === 0 ? (
-        <p className="ss-empty">No new suggestions. Insights appear after marks are published.</p>
-      ) : (
-        <ul className="ss-list">
-          {alerts.map((a) => (
-            <li key={a.id}>
-              <div>
-                <strong>
-                  {a.topic} · {nameOf(a.classId)}
-                </strong>
+
+      {open.length ? (
+        <ul className="ss-alerts">
+          {open.map((a) => (
+            <li key={a.id} className="tone-warn">
+              <Icon name="insights" />
+              <span>
+                <strong>{a.topic}</strong> · {nameOf(a.classId)}
+                <br />
                 <small>{a.detail}</small>
-              </div>
-              <button type="button" className="ss-btn ss-btn-sm" onClick={() => onAct(a.id, "accept")}>
-                Accept
+              </span>
+              <button type="button" className="ss-btn ss-btn-sm ss-btn-primary" onClick={() => act(a.id, "accept")}>
+                Assign practice
               </button>
-              <button type="button" className="ss-btn ss-btn-sm" onClick={() => onGo("/ai/insights", "ai-insights")}>
-                Edit
-              </button>
-              <button type="button" className="ss-link-btn" onClick={() => onAct(a.id, "dismiss")}>
+              <button type="button" className="ss-link-btn" onClick={() => act(a.id, "dismiss")}>
                 Dismiss
               </button>
             </li>
           ))}
         </ul>
+      ) : (
+        <p className="ss-empty">No learning gaps flagged right now.</p>
       )}
-      <p className="ss-note">Suggestions describe topics and next steps, never labels for individual learners. You can accept, edit or dismiss each one.</p>
-    </section>
-  );
-}
 
-function TutorCard({
-  classes,
-  topics,
-  usage,
-  nameOf,
-  onAssign,
-  onGo,
-}: {
-  classes: ClassInfo[];
-  topics: TutorTopic[];
-  usage: TeacherData["aiUsage"];
-  nameOf: (id: string) => string;
-  onAssign?: TeacherDashboardProps["onAssignTutor"];
-  onGo: (route: string, key: string) => void;
-}) {
-  const [classId, setClassId] = useState(classes[0]?.id ?? "");
-  const [topic, setTopic] = useState("");
-  const [msg, setMsg] = useState<string | null>(null);
-  const max = Math.max(1, ...topics.map((t) => t.sessions));
-
-  const assign = async () => {
-    const t = topic.trim();
-    if (!t) return;
-    await onAssign?.({ classId, topic: t });
-    setMsg(`Tutor lesson on "${t}" assigned to ${nameOf(classId)}.`);
-    setTopic("");
-  };
-
-  return (
-    <section id="tutor" className="ss-card ss-panel" aria-labelledby="tutor-title">
-      <header>
-        <h3 id="tutor-title">AI Tutor in your classes</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onGo("/ai/tutor", "ai-tutor")}>
-          Open AI Tutor
-        </button>
-      </header>
-      <div className="ss-pbody">
-        <div className="ss-trio">
-          <div>
-            <span>Tutor sessions</span>
-            <b>{usage.tutorSessions}</b>
-          </div>
-          <div>
-            <span>Quiz attempts</span>
-            <b>{usage.quizAttempts}</b>
-          </div>
-          <div>
-            <span>Items created</span>
-            <b>{usage.materialsThisTerm}</b>
-          </div>
-        </div>
-
-        <strong className="ss-h4">Topics learners are working on</strong>
-        {topics.length ? (
-          <div className="ss-rows" style={{ marginTop: 0 }}>
-            {topics.map((t) => (
-              <div className="ss-trow" key={`${t.classId}-${t.topic}`}>
-                <div>
-                  <strong>{t.topic}</strong>
-                  <small>{nameOf(t.classId)}</small>
-                </div>
-                <div className="ss-bar" aria-hidden="true">
-                  <i style={{ width: `${(t.sessions / max) * 100}%` }} />
-                </div>
-                <span>{t.sessions}</span>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className="ss-empty">Tutor activity appears here once learners start sessions.</p>
-        )}
-
-        <strong className="ss-h4">Assign a tutor lesson</strong>
-        <div className="ss-tform">
-          <label className="ss-lab">
-            Class
-            <select className="ss-input" value={classId} onChange={(e) => setClassId(e.target.value)}>
-              {classes.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.name}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="ss-lab">
-            Topic
-            <input className="ss-input" value={topic} onChange={(e) => setTopic(e.target.value)} placeholder="e.g. Circular motion" />
-          </label>
-          <div className="ss-span2">
-            <button type="button" className="ss-btn ss-btn-primary" onClick={assign} disabled={!topic.trim()}>
-              <Icon name="tutor" size={16} />
-              Assign lesson
-            </button>
-          </div>
-        </div>
-        {msg ? (
-          <p className="ss-sent" role="status" style={{ margin: 0 }}>
-            {msg}
-          </p>
-        ) : null}
-        <p className="ss-muted" style={{ margin: 0 }}>
-          Topics are shown for the whole class, not for individual learners.
-        </p>
-      </div>
-    </section>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-/* Communication                                                       */
-/* ------------------------------------------------------------------ */
-
-function CommentsCard({
-  done,
-  total,
-  classTeacherOf,
-  onGo,
-}: {
-  done: number;
-  total: number;
-  classTeacherOf: string;
-  onGo: (route: string, key: string) => void;
-}) {
-  const pct = Math.round((done / Math.max(1, total)) * 100);
-  return (
-    <section id="comments" className="ss-card ss-panel" aria-labelledby="comments-title">
-      <header>
-        <h3 id="comments-title">Report comments, {classTeacherOf}</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onGo("/academics/comments", "comments")}>
-          Open comments
-        </button>
-      </header>
-      <div className="ss-progress">
-        <div className="ss-bar" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100} aria-label="Comments completed">
-          <i style={{ width: `${pct}%` }} />
-        </div>
-        <small>
-          {done} of {total} learners have overall comments and conduct remarks. Report cards go to approval once these are complete.
-        </small>
-      </div>
-    </section>
-  );
-}
-
-function NoticesCard({ notices, onGo }: { notices: Notice[]; onGo: (route: string, key: string) => void }) {
-  return (
-    <section id="notices" className="ss-card ss-panel" aria-labelledby="notices-title">
-      <header>
-        <h3 id="notices-title">Announcements</h3>
-        <button type="button" className="ss-link-btn" onClick={() => onGo("/announcements", "announcements")}>
-          View all
-        </button>
-      </header>
-      <ul className="ss-activity">
-        {notices.map((n) => (
-          <li key={n.id}>
-            <span className="ss-pip" />
+      <h4 className="ss-h4" style={{ marginTop: 16 }}>
+        Most asked topics
+      </h4>
+      <ul className="ss-list">
+        {topics.map((t) => (
+          <li key={`${t.classId}-${t.topic}`}>
             <div>
-              <p>{n.title}</p>
-              <small>
-                {n.from} · {n.when}
-              </small>
+              <strong>{t.topic}</strong>
+              <small>{nameOf(t.classId)}</small>
             </div>
+            <span className="ss-count">{t.sessions} sessions</span>
+            <button type="button" className="ss-btn ss-btn-sm" onClick={() => assign(t)}>
+              Assign
+            </button>
           </li>
         ))}
       </ul>
+      {assigned ? (
+        <p className="ss-sent" role="status">
+          {assigned}
+        </p>
+      ) : null}
+      <p className="ss-note">
+        This term: {usage.materialsThisTerm} materials generated · {usage.quizAttempts} quiz attempts · {usage.tutorSessions} tutor sessions.
+      </p>
     </section>
   );
 }
 
-function PostNoticeCard({
+/* ------------------------------------------------------------------ */
+/* Announcements                                                       */
+/* ------------------------------------------------------------------ */
+
+function AnnouncementsCard({
+  notices,
   classes,
   nameOf,
   onPost,
+  onGo,
 }: {
+  notices: Notice[];
   classes: ClassInfo[];
   nameOf: (id: string) => string;
   onPost?: (classId: string, message: string) => void | Promise<void>;
+  onGo: (route: string, key: string) => void;
 }) {
   const [classId, setClassId] = useState(classes[0]?.id ?? "");
-  const [text, setText] = useState("");
-  const [sent, setSent] = useState(false);
+  const [message, setMessage] = useState("");
+  const [sent, setSent] = useState<string | null>(null);
 
-  const post = async () => {
-    const m = text.trim();
-    if (!m) return;
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    const m = message.trim();
+    if (!m || !classId) return;
     await onPost?.(classId, m);
-    setText("");
-    setSent(true);
-    setTimeout(() => setSent(false), 3000);
+    setSent(`Notice posted to ${nameOf(classId)}.`);
+    setMessage("");
   };
 
   return (
-    <section className="ss-card ss-panel" aria-labelledby="post-title">
+    <section id="announcements" className="ss-card ss-panel" aria-labelledby="ann-title">
       <header>
-        <h3 id="post-title">Post a class notice</h3>
+        <h3 id="ann-title">Announcements</h3>
+        <button type="button" className="ss-link-btn" onClick={() => onGo(ROUTE.announcements, "announcements")}>
+          All announcements
+        </button>
       </header>
-      <div className="ss-notice">
-        <select className="ss-input" value={classId} onChange={(e) => setClassId(e.target.value)} aria-label="Audience">
+      {notices.length ? (
+        <ul className="ss-list">
+          {notices.map((n) => (
+            <li key={n.id}>
+              <div>
+                <strong>{n.title}</strong>
+                <small>{n.from}</small>
+              </div>
+              <span className="ss-age">{n.when}</span>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <p className="ss-empty">No announcements.</p>
+      )}
+
+      <form className="ss-notice" onSubmit={submit}>
+        <h4 className="ss-h4">Post a notice to a class</h4>
+        <select className="ss-input" value={classId} onChange={(e) => setClassId(e.target.value)} aria-label="Class">
           {classes.map((c) => (
             <option key={c.id} value={c.id}>
               {c.name}
             </option>
           ))}
         </select>
-        <textarea className="ss-input" rows={3} value={text} onChange={(e) => setText(e.target.value)} placeholder="Write a notice for this class..." />
-        <button type="button" className="ss-btn ss-btn-primary" onClick={post} disabled={!text.trim()}>
+        <textarea className="ss-input" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Write your notice" aria-label="Notice" />
+        <button type="submit" className="ss-btn ss-btn-primary" disabled={!message.trim()}>
           Post notice
         </button>
-      </div>
-      {sent ? (
-        <p className="ss-sent" role="status">
-          Notice posted to {nameOf(classId)}.
-        </p>
-      ) : null}
+        {sent ? (
+          <p className="ss-sent" role="status">
+            {sent}
+          </p>
+        ) : null}
+      </form>
     </section>
   );
 }
@@ -1618,12 +1514,12 @@ function PostNoticeCard({
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
 
-function TeacherDashboard({
+export default function TeacherDashboard({
   data = SAMPLE,
   user,
   theme = "light",
-  isClassTeacher = true,
-  classTeacherOf = "Grade 11A",
+  isClassTeacher = false,
+  classTeacherOf,
   onNavigate,
   onLogout,
   onSearch,
@@ -1634,92 +1530,68 @@ function TeacherDashboard({
   onAlertAction,
   onPostNotice,
 }: TeacherDashboardProps) {
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [attClass, setAttClass] = useState(data.classes[0]?.id ?? "");
+
   const me: TeacherUser = user ?? {
     name: "Teacher",
-    roleLabel: isClassTeacher ? `Class Teacher, ${classTeacherOf}` : "Subject Teacher",
+    roleLabel: isClassTeacher && classTeacherOf ? `Class teacher · ${classTeacherOf}` : "Subject teacher",
   };
 
-  const [menuOpen, setMenuOpen] = useState(false);
-  const [attClass, setAttClass] = useState(data.classes[0]?.id ?? "");
-  const [alerts, setAlerts] = useState(data.alerts);
-
-  const go = (route: string, key = "") => onNavigate?.(route, key);
   const nameOf = (id: string) => data.classes.find((c) => c.id === id)?.name ?? id;
-
-  const goTo = (id: string) => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const reduce = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    el.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
-    if (!el.hasAttribute("tabindex")) el.setAttribute("tabindex", "-1");
-    el.focus({ preventScroll: true });
+  const go = (route: string, key: string) => {
+    if (onNavigate) onNavigate(route, key);
+    else window.location.assign(route);
   };
 
-  const actOnAlert = async (id: string, action: "accept" | "dismiss") => {
-    await onAlertAction?.(id, action);
-    setAlerts((a) => a.filter((x) => x.id !== id));
-  };
+  const pendingCount = data.pendingMarks.length;
+  const menu = useMemo(() => buildMenu({ marks: pendingCount }), [pendingCount]);
 
-  const takeRegister = (classId: string) => {
-    setAttClass(classId);
-    goTo("attendance");
-  };
-
-  /* derived numbers */
   const totalLearners = sum(data.classes.map((c) => c.learners));
-  const registersTaken = data.lessons.filter((l) => l.registerTaken).length;
-  const meanAll = Math.round(sum(data.classes.map((c) => c.mean)) / Math.max(1, data.classes.length));
-  const openMarks = data.pendingMarks.length;
-  const improving = sum(data.progress.map((p) => p.improving));
-  const declining = sum(data.progress.map((p) => p.declining));
-  const nextLesson = data.lessons.find((l) => !l.registerTaken) ?? data.lessons[0];
-  const countStatus = (s: MaterialStatus) => data.materials.filter((m) => m.status === s).length;
-  const topTopic = data.tutorTopics[0];
-
-  const messages = 2;
-  const menu = useMemo(() => buildMenu({ marks: openMarks, messages }, isClassTeacher), [openMarks, isClassTeacher]);
+  const registersPending = data.lessons.filter((l) => !l.registerTaken).length;
+  const notifications = data.notices.length + data.alerts.length;
 
   const dateLabel = new Date().toLocaleDateString("en-KE", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 
+  const takeRegister = (classId: string) => {
+    setAttClass(classId);
+    document.getElementById("attendance")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
   return (
-    <div id="top" className="ss-shell" data-theme={theme}>
-      <Sidebar menu={menu} user={me} open={menuOpen} activeKey="dashboard" onClose={() => setMenuOpen(false)} onNavigate={onNavigate} />
-      <div className={`ss-scrim${menuOpen ? " is-open" : ""}`} onClick={() => setMenuOpen(false)} aria-hidden="true" />
+    <div className="ss-shell" data-theme={theme}>
+      <Sidebar menu={menu} user={me} open={sidebarOpen} activeKey="dashboard" onClose={() => setSidebarOpen(false)} onNavigate={onNavigate} />
+      <div className={`ss-scrim${sidebarOpen ? " is-open" : ""}`} onClick={() => setSidebarOpen(false)} aria-hidden="true" />
 
       <div className="ss-main">
         <Header
-          title="Teacher Dashboard"
+          title="Teacher dashboard"
           dateLabel={dateLabel}
           user={me}
-          notifications={alerts.length + openMarks}
-          action={{ label: "Enter marks", onClick: () => go("/academics/marks", "marks-entry") }}
-          onOpenMenu={() => setMenuOpen(true)}
+          notifications={notifications}
+          action={{ label: "Upload marks", onClick: () => go(ROUTE.marks, "marks-entry") }}
+          onOpenMenu={() => setSidebarOpen(true)}
           onSearch={onSearch}
           onNavigate={onNavigate}
           onLogout={onLogout}
         />
 
-        <main className="ss-content">
-          {/* Hero */}
-          <section className="ss-hero" aria-label="Welcome">
+        <main className="ss-content" id="main">
+          <section className="ss-hero">
             <div className="ss-hero-text">
-              <span className="ss-eyebrow">{isClassTeacher ? `Class teacher, ${classTeacherOf}` : "Subject teacher"}</span>
-              <h2>{greeting()}, welcome back</h2>
+              <span className="ss-eyebrow">{greeting()}</span>
+              <h2>{me.name}</h2>
               <p>
-                You have <strong>{data.lessons.length} lessons</strong> today and <strong>{openMarks} marks tasks</strong> waiting
-                {alerts.length > 0 && (
-                  <>
-                    , plus <strong>{alerts.length} AI alerts</strong> to review
-                  </>
-                )}
-                .
+                You have <strong>{data.lessons.length} lessons</strong> today and <strong>{registersPending}</strong>{" "}
+                {registersPending === 1 ? "register" : "registers"} still to take. <strong>{data.pendingMarks.length}</strong> marks{" "}
+                {data.pendingMarks.length === 1 ? "entry is" : "entries are"} waiting.
               </p>
               <div className="ss-hero-btns">
-                <button type="button" className="ss-btn ss-btn-gold" onClick={() => goTo("attendance")}>
-                  Take attendance
+                <button type="button" className="ss-btn ss-btn-gold" onClick={() => document.getElementById("attendance")?.scrollIntoView({ behavior: "smooth" })}>
+                  Take register
                 </button>
-                <button type="button" className="ss-btn ss-btn-ghost" onClick={() => goTo("generate")}>
-                  Generate material
+                <button type="button" className="ss-btn ss-btn-ghost" onClick={() => go(ROUTE.marks, "marks-entry")}>
+                  Upload marks
                 </button>
               </div>
             </div>
@@ -1733,238 +1605,85 @@ function TeacherDashboard({
                 <b>{totalLearners}</b>
               </div>
               <div>
-                <span>Lessons today</span>
-                <b>{data.lessons.length}</b>
+                <span>Periods / week</span>
+                <b>{data.periodsThisWeek}</b>
               </div>
             </div>
           </section>
 
-          {/* KPIs */}
-          <section className="ss-kpis" aria-label="Key indicators">
-            <article className="ss-card ss-kpi">
-              <span className="ss-kpi-label">Registers taken today</span>
-              <b>
-                {registersTaken} of {data.lessons.length}
-              </b>
-              <div className="ss-bar">
-                <i style={{ width: `${(registersTaken / Math.max(1, data.lessons.length)) * 100}%` }} />
-              </div>
-              <small>Lessons with attendance recorded</small>
-            </article>
-            <article className="ss-card ss-kpi">
-              <span className="ss-kpi-label">Marks tasks open</span>
-              <b>{openMarks}</b>
-              <div className="ss-bar">
-                <i className="gold" style={{ width: `${Math.max(8, 100 - openMarks * 20)}%` }} />
-              </div>
-              <small>Drafts, returned and not started</small>
-            </article>
-            <article className="ss-card ss-kpi">
-              <span className="ss-kpi-label">Average class score</span>
-              <b>{meanAll}%</b>
-              <div className="ss-bar">
-                <i style={{ width: `${meanAll}%` }} />
-              </div>
-              <small>Across your classes this term</small>
-            </article>
-            <article className="ss-card ss-kpi">
-              <span className="ss-kpi-label">AI alerts to review</span>
-              <b>{alerts.length}</b>
-              <div className="ss-bar">
-                <i className="gold" style={{ width: `${Math.min(100, alerts.length * 25)}%` }} />
-              </div>
-              <small>Topic-level suggestions for your classes</small>
-            </article>
-          </section>
+          <QuickNav menu={menu} activeKey="dashboard" onGo={go} />
 
-          {/* Workspace cards */}
-          <SectionHead title="Your workspace" note="Open a page from a card, or use the sections below to work from this dashboard." />
-          <div className="ss-mods">
-            <ModuleCard
-              icon="marks"
-              title="Upload marks"
-              hint="Marks entry and CSV upload"
-              stat={openMarks}
-              statLabel="tasks open"
-              primary={{ label: "Upload marks (CSV)", onClick: () => go("/academics/marks", "marks-entry") }}
-              secondary={{ label: "See tasks", onClick: () => goTo("marks") }}
-            >
-              {data.pendingMarks.slice(0, 2).map((m) => (
-                <div className="ss-mini-line" key={m.id}>
-                  <span>
-                    {m.assessment} · {nameOf(m.classId)}
-                  </span>
-                  <span className={`ss-tag ${m.status === "Returned" ? "warn" : ""}`}>{m.status}</span>
-                </div>
-              ))}
-              {openMarks === 0 ? <p className="ss-mod-sub">All marks are in.</p> : null}
-            </ModuleCard>
-
-            <ModuleCard
-              icon="results"
-              title="View results"
-              hint="Published results by class"
-              stat={`${meanAll}%`}
-              statLabel="average across your classes"
-              primary={{ label: "View results", onClick: () => go("/academics/results", "results") }}
-              secondary={{ label: "See summary", onClick: () => goTo("results") }}
-            >
-              {data.results.map((r) => (
-                <div className="ss-mini" key={r.classId}>
-                  <span>{nameOf(r.classId)}</span>
-                  <div className="ss-bar" aria-hidden="true">
-                    <i style={{ width: `${r.mean}%` }} />
-                  </div>
-                  <span>{r.mean}%</span>
-                </div>
-              ))}
-            </ModuleCard>
-
-            <ModuleCard
-              icon="students"
-              title="Learner details"
-              hint="Profiles, contacts and history"
-              stat={totalLearners}
-              statLabel={`learners in ${data.classes.length} classes`}
-              primary={{ label: "My learners", onClick: () => go("/academics/students", "students") }}
-              secondary={{ label: "Find a learner", onClick: () => goTo("students") }}
-            >
-              <div className="ss-chips">
-                {data.classes.map((c) => (
-                  <span className="ss-tag" key={c.id}>
-                    {c.name}: {c.learners}
-                  </span>
-                ))}
-              </div>
-            </ModuleCard>
-
-            <ModuleCard
-              icon="progress"
-              title="Progress records"
-              hint="Trends over time"
-              stat={improving}
-              statLabel="learners improving"
-              primary={{ label: "Progress records", onClick: () => go("/academics/progress", "progress") }}
-              secondary={{ label: "See trends", onClick: () => goTo("progress") }}
-            >
-              {data.progress.map((p) => (
-                <div className="ss-mini-line" key={p.classId}>
-                  <span>{nameOf(p.classId)}</span>
-                  <Sparkline points={p.points} label={`${nameOf(p.classId)} class mean trend`} />
-                </div>
-              ))}
-              <p className="ss-mod-sub">{declining} learners show a falling trend.</p>
-            </ModuleCard>
-
-            <ModuleCard
-              icon="timetable"
-              title="Timetable"
-              hint="Lessons and rooms"
-              stat={data.lessons.length}
-              statLabel={`lessons today · ${data.periodsThisWeek} this week`}
-              primary={{ label: "Open timetable", onClick: () => go("/academics/timetable", "timetable") }}
-              secondary={{ label: "Today's lessons", onClick: () => goTo("timetable") }}
-            >
-              {nextLesson ? (
-                <p className="ss-mod-sub">
-                  <strong>{nextLesson.registerTaken ? "Latest" : "Next"}:</strong> {nextLesson.time} · {nameOf(nextLesson.classId)}, {nextLesson.subject}, {nextLesson.room}
-                </p>
-              ) : (
-                <p className="ss-mod-sub">No lessons today.</p>
-              )}
-            </ModuleCard>
-
-            <ModuleCard
-              icon="materials"
-              title="Learning materials"
-              hint="Upload and generate"
-              stat={data.materials.length}
-              statLabel="items in your library"
-              primary={{ label: "Upload material", onClick: () => goTo("upload") }}
-              secondary={{ label: "Generate", onClick: () => goTo("generate") }}
-            >
-              <div className="ss-chips">
-                <span className="ss-tag ok">{countStatus("Published")} published</span>
-                <span className="ss-tag muted">{countStatus("Draft")} draft</span>
-                <span className="ss-tag warn">{countStatus("Awaiting review")} to review</span>
-              </div>
-            </ModuleCard>
-
-            <ModuleCard
-              icon="tutor"
-              title="AI Tutor"
-              hint="What learners are working on"
-              stat={data.aiUsage.tutorSessions}
-              statLabel="tutor sessions in your classes"
-              primary={{ label: "Open AI Tutor", onClick: () => go("/ai/tutor", "ai-tutor") }}
-              secondary={{ label: "Assign a lesson", onClick: () => goTo("tutor") }}
-            >
-              {topTopic ? (
-                <p className="ss-mod-sub">
-                  <strong>Top topic:</strong> {topTopic.topic} in {nameOf(topTopic.classId)} ({topTopic.sessions} sessions)
-                </p>
-              ) : (
-                <p className="ss-mod-sub">No tutor sessions yet.</p>
-              )}
-            </ModuleCard>
+          <SectionHead title="Today" note="Lessons, registers and marks that need you." />
+          <div className="ss-two">
+            <LessonsCard lessons={data.lessons} periodsThisWeek={data.periodsThisWeek} nameOf={nameOf} onTakeRegister={takeRegister} onGo={go} />
+            <MarksCard pending={data.pendingMarks} nameOf={nameOf} onGo={go} />
           </div>
 
-          {/* Classes and timetable */}
-          <SectionHead title="Classes and timetable" note="Manage your classes, see today's lessons and take the register." />
+          <AttendanceCard
+            classes={data.classes}
+            roster={data.roster}
+            attClass={attClass}
+            onClassChange={setAttClass}
+            nameOf={nameOf}
+            onSave={onSaveAttendance}
+            onGo={go}
+          />
+
+          {isClassTeacher ? (
+            <section className="ss-card ss-panel" aria-labelledby="comments-title">
+              <header>
+                <h3 id="comments-title">Report comments{classTeacherOf ? ` · ${classTeacherOf}` : ""}</h3>
+                <button type="button" className="ss-link-btn" onClick={() => go(ROUTE.comments, "comments")}>
+                  Write comments
+                </button>
+              </header>
+              <div className="ss-progress">
+                <div
+                  className="ss-bar"
+                  role="progressbar"
+                  aria-valuenow={data.commentsDone}
+                  aria-valuemin={0}
+                  aria-valuemax={data.commentsTotal}
+                  aria-label="Report comments written"
+                >
+                  <i style={{ width: `${data.commentsTotal ? (data.commentsDone / data.commentsTotal) * 100 : 0}%` }} />
+                </div>
+                <small>
+                  {data.commentsDone} of {data.commentsTotal} comments written
+                </small>
+              </div>
+            </section>
+          ) : null}
+
+          <SectionHead title="My classes and learners" />
           <ClassesCard classes={data.classes} onGo={go} />
           <div className="ss-two">
-            <AttendanceCard
-              classes={data.classes}
-              roster={data.roster}
-              attClass={attClass}
-              onClassChange={setAttClass}
+            <ResultsCard results={data.results} nameOf={nameOf} onGo={go} />
+            <ProgressCard progress={data.progress} nameOf={nameOf} onGo={go} />
+          </div>
+          <StudentFinderCard roster={data.roster} nameOf={nameOf} onGo={go} />
+
+          <SectionHead title="Teaching" note="Share, upload and generate learning materials." />
+          <div className="ss-two">
+            <MaterialsCard materials={data.materials} classes={data.classes} nameOf={nameOf} onUpload={onUploadMaterial} onGo={go} />
+            <GenerateCard classes={data.classes} onGenerate={onGenerate} onGo={go} />
+          </div>
+
+          <SectionHead title="AI Mwalimu and announcements" />
+          <div className="ss-two">
+            <MwalimuCard
+              topics={data.tutorTopics}
+              alerts={data.alerts}
+              usage={data.aiUsage}
               nameOf={nameOf}
-              onSave={onSaveAttendance}
+              onAssign={onAssignTutor}
+              onAlertAction={onAlertAction}
               onGo={go}
             />
-            <LessonsCard lessons={data.lessons} periodsThisWeek={data.periodsThisWeek} nameOf={nameOf} onTakeRegister={takeRegister} onGo={go} />
-          </div>
-
-          {/* Marks and results */}
-          <SectionHead title="Marks and results" note="Finish pending marks and check how each class did." />
-          <div className="ss-two">
-            <MarksCard pending={data.pendingMarks} nameOf={nameOf} onGo={go} />
-            <ResultsCard results={data.results} nameOf={nameOf} onGo={go} />
-          </div>
-
-          {/* Learners and progress */}
-          <SectionHead title="Learners and progress" note="Look up a learner and follow each class over time." />
-          <div className="ss-two">
-            <ProgressCard progress={data.progress} nameOf={nameOf} onGo={go} />
-            <StudentFinderCard roster={data.roster} nameOf={nameOf} onGo={go} />
-          </div>
-
-          {/* Learning materials */}
-          <SectionHead title="Learning materials" note="Upload your own files or generate new ones, then review before learners see them." />
-          <div className="ss-two">
-            <GenerateCard classes={data.classes} usage={data.aiUsage} nameOf={nameOf} onGenerate={onGenerate} onGo={go} />
-            <UploadCard classes={data.classes} nameOf={nameOf} onUpload={onUploadMaterial} onGo={go} />
-          </div>
-          <MaterialsListCard materials={data.materials} nameOf={nameOf} onGo={go} />
-
-          {/* AI Tutor */}
-          <SectionHead title="AI Tutor" note="See where learners need help and assign a guided lesson." />
-          <div className="ss-two">
-            <InsightsCard alerts={alerts} nameOf={nameOf} onAct={actOnAlert} onGo={go} />
-            <TutorCard classes={data.classes} topics={data.tutorTopics} usage={data.aiUsage} nameOf={nameOf} onAssign={onAssignTutor} onGo={go} />
-          </div>
-
-          {/* Communication */}
-          <SectionHead title="Communication" />
-          {isClassTeacher && <CommentsCard done={data.commentsDone} total={data.commentsTotal} classTeacherOf={classTeacherOf} onGo={go} />}
-          <div className="ss-two">
-            <NoticesCard notices={data.notices} onGo={go} />
-            <PostNoticeCard classes={data.classes} nameOf={nameOf} onPost={onPostNotice} />
+            <AnnouncementsCard notices={data.notices} classes={data.classes} nameOf={nameOf} onPost={onPostNotice} onGo={go} />
           </div>
         </main>
       </div>
     </div>
   );
 }
-
-export default TeacherDashboard;

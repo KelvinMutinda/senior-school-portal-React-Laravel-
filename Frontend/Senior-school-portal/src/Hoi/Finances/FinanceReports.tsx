@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { Shell } from "../AcademicOverview";      /* sidebar + header */
+import { Shell } from "../AcademicOverview";     
 
 
 type Grade = 10 | 11 | 12;
@@ -8,9 +8,9 @@ type Grade = 10 | 11 | 12;
 export interface ReportData {
   term: number;
   year: number;
-  expected: number;                                   // KES billed for the term
-  collected: number;                                  // KES received so far
-  weekly: { label: string; collected: number; target: number }[];          // cumulative, one per week
+  expected: number;                                   
+  collected: number;                                  
+  weekly: { label: string; collected: number; target: number }[];          
   byGrade: { grade: Grade; expected: number; collected: number }[];
   byMethod: { method: string; amount: number }[];
   voteHeads: { name: string; expected: number; collected: number }[];
@@ -19,11 +19,7 @@ export interface ReportData {
   transactions: { id: string; date: string; learner: string; className: string; reference: string; method: string; amount: number }[];
 }
 
-/* ================================================================== */
-/* Data layer: change only this section to match your backend          */
-/* ================================================================== */
 
-/** Set VITE_API_URL in .env. Without it the page shows sample data. */
 const API_URL = (import.meta as unknown as { env?: Record<string, string | undefined> }).env?.VITE_API_URL;
 const REPORT_PATH = "/finance/reports";               // called as GET {API_URL}/finance/reports?term=2&year=2026
 const CURRENT_TERM = 2;

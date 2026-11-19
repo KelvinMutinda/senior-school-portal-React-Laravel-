@@ -26,6 +26,10 @@ import AcademicOverview from './Hoi/AcademicOverview'
 import FinanceReports from './Hoi/Finances/FinanceReports'
 import AiInsights from './Hoi/AI/AiInsights'
 import AiControl from './Hoi/AI/AiControl'
+import UploadLearning from './Teachers/UploadLearning'
+import ProgressRecords from './components/ProgressRecords'
+import GetLearningMaterial from './Teachers/LearningMaterials/GetLearningMaterial'
+import Classes from './Teachers/Classes'
 
 
 function App() {
@@ -43,6 +47,7 @@ function App() {
         <Route path="Results/View/Results" element={<ViewResults/>}/>
         <Route path="/auth/Login" element={<Login/>}/>
         <Route path="Academics/Results" element={<AcademicResults/>}/>
+         <Route path="Academics/Progress" element={<ProgressRecords/>}/>
         <Route path="/Academic/LearningMaterials" element={<LearningMaterials/>}/>
         <Route path="Academic/Timetable" element={<Timetable/>}/>
         <Route path="Academic/Overview" element={<AcademicOverview/>}/>
@@ -57,6 +62,10 @@ function App() {
         <Route path="Hoi/AI/Insights" element={<AiInsights/>}/>
         <Route path="Hoi/AI/Controls" element={<AiControl/>}/>
         <Route path="/Learner/Profile"element={<Profile/>}/>
+        <Route path="Upload/LearningMaterial" element={<UploadLearning/>}/>
+        <Route path="/Academic/LearningMaterials" element={<GetLearningMaterial/>}/>
+        <Route path="/Generate/LearningMaterial" element={<AiTutorPage/>}/>
+        <Route path="Academics/classes" element={<Classes/>}/>
     </Routes>
   )
 }
