@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { Shell } from "./AcademicOverview";        /* sidebar + header (and their styles) */
+import TeacherSidebar from "../Teachers/TeacherSidebar";
 
 /* ================================================================== */
 /* Types                                                               */
@@ -165,7 +165,7 @@ function Students() {
     return () => ctl.abort();
   }, [load, reload]);
 
-  /* header search sends ?q=...; keep the box in sync */
+  /* a link like /Students?q=name pre-fills the search box; keep it in sync */
   useEffect(() => { setQ(params.get("q") ?? ""); }, [params]);
   useEffect(() => { setPage(1); }, [q, grade, cls, status, sort]);
   useEffect(() => {
@@ -221,132 +221,146 @@ function Students() {
   const filtersOn = q || grade !== "all" || cls !== "all" || status !== "active";
 
   return (
-    <Shell title="Students">
-     
-      <div className="st-page">
-        <div className="st-head">
-          <div>
-            <h2>Students</h2>
-            <p>Every learner in Grades 10 to 12. Search, filter and open a record for the full details.</p>
+    // tt-shell gives the shared TeacherSidebar its colours and the 260px + content layout.
+    // ss-shell keeps the header and content styles working.
+    <div className="tt-shell ss-shell" style={{ display: "grid", background: "var(--ss-canvas)" }}>
+      <TeacherSidebar />
+
+      <div className="ss-main">
+        <header className="ss-header">
+          <div className="ss-h-title">
+            <p className="ss-h-name">Learners</p>
+            <span>Class management</span>
           </div>
-          <div className="st-head-actions">
-            <button type="button" className="st-btn" onClick={() => setReload((n) => n + 1)} disabled={state === "loading"}><Icon name="refresh" /> Refresh</button>
-            <button type="button" className="st-btn" onClick={() => download(`learners-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(filtered))} disabled={!filtered.length}><Icon name="download" /> Export CSV</button>
-            <button type="button" className="st-btn st-btn-primary" onClick={() => navigate("/Register/Learner")}><Icon name="plus" /> Register learner</button>
-          </div>
-        </div>
+        </header>
 
-        {sample && state === "ready" && (
-          <div className="st-note" role="status">
-            <Icon name="alert" size={16} />
-            <span>Showing sample learners. Set <code>VITE_API_URL</code> in your <code>.env</code> file and check <code>LEARNERS_PATH</code> in this file to load real data.</span>
-          </div>
-        )}
-
-        {/* summary */}
-        <div className="st-kpis">
-          <div className="st-card st-kpi"><span>Active learners</span><b>{state === "ready" ? stats.total : "–"}</b><small>{state === "ready" ? `${stats.boys} boys · ${stats.girls} girls` : " "}</small></div>
-          {stats.byGrade.map(({ g, n }) => (
-            <button key={g} type="button" className={`st-card st-kpi st-kpi-btn${grade === g ? " is-on" : ""}`} onClick={() => { setGrade(grade === g ? "all" : g); setCls("all"); }} aria-pressed={grade === g}>
-              <span>Grade {g}</span><b>{state === "ready" ? n : "–"}</b><small>{grade === g ? "Showing only this grade" : "Select to filter"}</small>
-            </button>
-          ))}
-          <div className="st-card st-kpi st-kpi-risk"><span>Need follow-up</span><b>{state === "ready" ? stats.atRisk : "–"}</b><small>Attendance under 85% or mean under 40%</small></div>
-        </div>
-
-        {/* filters */}
-        <div className="st-card st-filters">
-          <label className="st-search">
-            <Icon name="search" />
-            <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, admission number or guardian" aria-label="Search learners" />
-          </label>
-          <label className="st-lab">Class
-            <select value={cls} onChange={(e) => setCls(e.target.value)}>
-              <option value="all">All classes</option>
-              {classes.map((c) => <option key={c} value={c}>{c}</option>)}
-            </select>
-          </label>
-          <label className="st-lab">Status
-            <select value={status} onChange={(e) => setStatus(e.target.value as "all" | Status)}>
-              <option value="active">Active</option>
-              <option value="inactive">Inactive</option>
-              <option value="transferred">Transferred</option>
-              <option value="all">All</option>
-            </select>
-          </label>
-          {filtersOn && <button type="button" className="st-link" onClick={() => { clearSearch(); setGrade("all"); setCls("all"); setStatus("active"); }}>Clear filters</button>}
-        </div>
-
-        {/* list */}
-        <section className="st-card st-list" aria-busy={state === "loading"}>
-          <header>
-            <h3>Learners</h3>
-            <span>{state === "ready" ? `${filtered.length} ${filtered.length === 1 ? "learner" : "learners"}` : ""}</span>
-          </header>
-
-          {state === "loading" && (
-            <div className="st-skel" aria-label="Loading learners">
-              {Array.from({ length: 6 }).map((_, i) => <div key={i} className="st-skel-row"><i /><span /><span /><span /></div>)}
-            </div>
-          )}
-
-          {state === "error" && (
-            <div className="st-empty">
-              <h4>Learners could not be loaded</h4>
-              <p>{error}</p>
-              <button type="button" className="st-btn st-btn-primary" onClick={() => setReload((n) => n + 1)}>Try again</button>
-            </div>
-          )}
-
-          {state === "ready" && filtered.length === 0 && (
-            <div className="st-empty">
-              <h4>{learners.length === 0 ? "No learners registered yet" : "No learners match these filters"}</h4>
-              <p>{learners.length === 0 ? "Register the first learner to see them listed here." : "Try a different name or clear the filters."}</p>
-              {learners.length === 0 && <button type="button" className="st-btn st-btn-primary" onClick={() => navigate("/Register/Learner")}>Register learner</button>}
-            </div>
-          )}
-
-          {state === "ready" && filtered.length > 0 && (
-            <>
-              <div className="st-scroll">
-                <table className="st-table">
-                  <caption className="st-sr">Learners</caption>
-                  <thead>
-                    <tr>
-                      {th("name", "Learner")}{th("class", "Class")}
-                      <th scope="col">Gender</th>
-                      {th("attendance", "Attendance")}{th("mean", "Mean")}
-                      <th scope="col">Guardian</th>{th("status", "Status")}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {shown.map((l) => (
-                      <tr key={l.id} tabIndex={0} onClick={() => setOpen(l)} onKeyDown={(e) => { if (e.key === "Enter") setOpen(l); }}>
-                        <td data-label="Learner">
-                          <div className="st-who"><span className="st-av">{initials(l)}</span><span><strong>{fullName(l)}</strong><small>{l.admissionNo ? `Adm. ${l.admissionNo}` : "No admission number"}</small></span></div>
-                        </td>
-                        <td data-label="Class">{l.className || "–"}{l.pathway && <small>{l.pathway}</small>}</td>
-                        <td data-label="Gender">{l.gender || "–"}</td>
-                        <td data-label="Attendance" className={l.attendance !== null && l.attendance < 85 ? "st-low" : ""}>{pct(l.attendance)}</td>
-                        <td data-label="Mean" className={l.mean !== null && l.mean < 40 ? "st-low" : ""}>{pct(l.mean)}</td>
-                        <td data-label="Guardian">{l.guardianName || "–"}{l.guardianPhone && <small>{l.guardianPhone}</small>}</td>
-                        <td data-label="Status"><span className={`st-tag ${l.status}`}>{l.status}</span></td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+        <main className="ss-content">
+          <div className="st-page">
+            <div className="st-head">
+              <div>
+                <h2>Students</h2>
+                <p>Every learner in Grades 10 to 12. Search, filter and open a record for the full details.</p>
               </div>
-              <footer className="st-pager">
-                <span>Showing {(page - 1) * PAGE_SIZE + 1} to {Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}</span>
-                <div>
-                  <button type="button" className="st-btn" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>Previous</button>
-                  <b>Page {page} of {pages}</b>
-                  <button type="button" className="st-btn" disabled={page === pages} onClick={() => setPage((p) => p + 1)}>Next</button>
+              <div className="st-head-actions">
+                <button type="button" className="st-btn" onClick={() => setReload((n) => n + 1)} disabled={state === "loading"}><Icon name="refresh" /> Refresh</button>
+                <button type="button" className="st-btn" onClick={() => download(`learners-${new Date().toISOString().slice(0, 10)}.csv`, toCsv(filtered))} disabled={!filtered.length}><Icon name="download" /> Export CSV</button>
+                <button type="button" className="st-btn st-btn-primary" onClick={() => navigate("/Register/Learner")}><Icon name="plus" /> Register learner</button>
+              </div>
+            </div>
+
+            {sample && state === "ready" && (
+              <div className="st-note" role="status">
+                <Icon name="alert" size={16} />
+                <span>Showing sample learners. Set <code>VITE_API_URL</code> in your <code>.env</code> file and check <code>LEARNERS_PATH</code> in this file to load real data.</span>
+              </div>
+            )}
+
+            {/* summary */}
+            <div className="st-kpis">
+              <div className="st-card st-kpi"><span>Active learners</span><b>{state === "ready" ? stats.total : "–"}</b><small>{state === "ready" ? `${stats.boys} boys · ${stats.girls} girls` : " "}</small></div>
+              {stats.byGrade.map(({ g, n }) => (
+                <button key={g} type="button" className={`st-card st-kpi st-kpi-btn${grade === g ? " is-on" : ""}`} onClick={() => { setGrade(grade === g ? "all" : g); setCls("all"); }} aria-pressed={grade === g}>
+                  <span>Grade {g}</span><b>{state === "ready" ? n : "–"}</b><small>{grade === g ? "Showing only this grade" : "Select to filter"}</small>
+                </button>
+              ))}
+              <div className="st-card st-kpi st-kpi-risk"><span>Need follow-up</span><b>{state === "ready" ? stats.atRisk : "–"}</b><small>Attendance under 85% or mean under 40%</small></div>
+            </div>
+
+            {/* filters */}
+            <div className="st-card st-filters">
+              <label className="st-search">
+                <Icon name="search" />
+                <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, admission number or guardian" aria-label="Search learners" />
+              </label>
+              <label className="st-lab">Class
+                <select value={cls} onChange={(e) => setCls(e.target.value)}>
+                  <option value="all">All classes</option>
+                  {classes.map((c) => <option key={c} value={c}>{c}</option>)}
+                </select>
+              </label>
+              <label className="st-lab">Status
+                <select value={status} onChange={(e) => setStatus(e.target.value as "all" | Status)}>
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="transferred">Transferred</option>
+                  <option value="all">All</option>
+                </select>
+              </label>
+              {filtersOn && <button type="button" className="st-link" onClick={() => { clearSearch(); setGrade("all"); setCls("all"); setStatus("active"); }}>Clear filters</button>}
+            </div>
+
+            {/* list */}
+            <section className="st-card st-list" aria-busy={state === "loading"}>
+              <header>
+                <h3>Learners</h3>
+                <span>{state === "ready" ? `${filtered.length} ${filtered.length === 1 ? "learner" : "learners"}` : ""}</span>
+              </header>
+
+              {state === "loading" && (
+                <div className="st-skel" aria-label="Loading learners">
+                  {Array.from({ length: 6 }).map((_, i) => <div key={i} className="st-skel-row"><i /><span /><span /><span /></div>)}
                 </div>
-              </footer>
-            </>
-          )}
-        </section>
+              )}
+
+              {state === "error" && (
+                <div className="st-empty">
+                  <h4>Learners could not be loaded</h4>
+                  <p>{error}</p>
+                  <button type="button" className="st-btn st-btn-primary" onClick={() => setReload((n) => n + 1)}>Try again</button>
+                </div>
+              )}
+
+              {state === "ready" && filtered.length === 0 && (
+                <div className="st-empty">
+                  <h4>{learners.length === 0 ? "No learners registered yet" : "No learners match these filters"}</h4>
+                  <p>{learners.length === 0 ? "Register the first learner to see them listed here." : "Try a different name or clear the filters."}</p>
+                  {learners.length === 0 && <button type="button" className="st-btn st-btn-primary" onClick={() => navigate("/Register/Learner")}>Register learner</button>}
+                </div>
+              )}
+
+              {state === "ready" && filtered.length > 0 && (
+                <>
+                  <div className="st-scroll">
+                    <table className="st-table">
+                      <caption className="st-sr">Learners</caption>
+                      <thead>
+                        <tr>
+                          {th("name", "Learner")}{th("class", "Class")}
+                          <th scope="col">Gender</th>
+                          {th("attendance", "Attendance")}{th("mean", "Mean")}
+                          <th scope="col">Guardian</th>{th("status", "Status")}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {shown.map((l) => (
+                          <tr key={l.id} tabIndex={0} onClick={() => setOpen(l)} onKeyDown={(e) => { if (e.key === "Enter") setOpen(l); }}>
+                            <td data-label="Learner">
+                              <div className="st-who"><span className="st-av">{initials(l)}</span><span><strong>{fullName(l)}</strong><small>{l.admissionNo ? `Adm. ${l.admissionNo}` : "No admission number"}</small></span></div>
+                            </td>
+                            <td data-label="Class">{l.className || "–"}{l.pathway && <small>{l.pathway}</small>}</td>
+                            <td data-label="Gender">{l.gender || "–"}</td>
+                            <td data-label="Attendance" className={l.attendance !== null && l.attendance < 85 ? "st-low" : ""}>{pct(l.attendance)}</td>
+                            <td data-label="Mean" className={l.mean !== null && l.mean < 40 ? "st-low" : ""}>{pct(l.mean)}</td>
+                            <td data-label="Guardian">{l.guardianName || "–"}{l.guardianPhone && <small>{l.guardianPhone}</small>}</td>
+                            <td data-label="Status"><span className={`st-tag ${l.status}`}>{l.status}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <footer className="st-pager">
+                    <span>Showing {(page - 1) * PAGE_SIZE + 1} to {Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length}</span>
+                    <div>
+                      <button type="button" className="st-btn" disabled={page === 1} onClick={() => setPage((p) => p - 1)}>Previous</button>
+                      <b>Page {page} of {pages}</b>
+                      <button type="button" className="st-btn" disabled={page === pages} onClick={() => setPage((p) => p + 1)}>Next</button>
+                    </div>
+                  </footer>
+                </>
+              )}
+            </section>
+          </div>
+        </main>
       </div>
 
       {/* detail drawer */}
@@ -377,12 +391,11 @@ function Students() {
           </aside>
         </>
       )}
-    </Shell>
+    </div>
   );
 }
 
 export default Students;
-
 
 
 function sampleLearners(): Learner[] {
@@ -407,4 +420,3 @@ function sampleLearners(): Learner[] {
   }
   return out;
 }
-

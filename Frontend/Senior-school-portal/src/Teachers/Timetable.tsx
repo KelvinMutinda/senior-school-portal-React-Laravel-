@@ -1,12 +1,14 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { NavLink } from 'react-router-dom'
+// Adjust this path to wherever your shared TeacherSidebar.tsx lives
+import TeacherSidebar from './TeacherSidebar'
 
 /* ------------------------------------------------------------------ */
-/* Config – adjust these to match your backend                         */
+/* Config                                                              */
 /* ------------------------------------------------------------------ */
-const API_BASE = '/api'
-const REFRESH_MS = 60_000 // re-fetch every minute so teachers see admin changes
-const EDITOR_ROLES = ['admin', 'dean'] // only these roles can add/delete
+// Set VITE_API_URL in .env (e.g. http://localhost:5000/api) or rely on the Vite proxy for "/api"
+const API_BASE: string = (import.meta.env?.VITE_API_URL as string) || '/api'
+const REFRESH_MS = 60_000
+const EDITOR_ROLES = ['admin', 'dean']
 
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday'] as const
 type Day = (typeof DAYS)[number]
@@ -14,8 +16,8 @@ type Day = (typeof DAYS)[number]
 interface TimetableEntry {
   id: string
   day: Day
-  startTime: string // "08:00"
-  endTime: string // "08:40"
+  startTime: string
+  endTime: string
   subject: string
   className: string
   room?: string
@@ -54,113 +56,49 @@ const toMinutes = (t: string) => {
   return h * 60 + (m || 0)
 }
 
-const todayName = (): string =>
-  new Date().toLocaleDateString('en-GB', { weekday: 'long' })
+const todayName = (): string => new Date().toLocaleDateString('en-GB', { weekday: 'long' })
 
-const NAV = [
-  {
-    heading: 'Overview',
-    items: [{ label: 'Dashboard', to: '/teacher/dashboard', icon: 'grid' }],
-  },
-  {
-    heading: 'Class management',
-    items: [
-      { label: 'My classes', to: '/teacher/classes', icon: 'users' },
-      { label: 'Learners', to: '/teacher/learners', icon: 'user' },
-      { label: 'Attendance', to: '/teacher/attendance', icon: 'check' },
-    ],
-  },
-  {
-    heading: 'Assessment',
-    items: [
-      { label: 'Upload marks', to: '/teacher/upload-marks', icon: 'pen' },
-      { label: 'View marks', to: '/teacher/view-marks', icon: 'bars' },
-      { label: 'Progress records', to: '/teacher/progress', icon: 'trend' },
-    ],
-  },
-  {
-    heading: 'Teaching',
-    items: [
-      { label: 'Timetable', to: '/Academics/Timetable', icon: 'calendar' },
-      { label: 'Learning materials', to: '/Teacher/materials', icon: 'book' },
-      { label: 'Upload learning materials', to: '/Upload/LearningMaterial', icon: 'upload' },
-      { label: 'Generate learning material', to: '/AI/Chat', icon: 'spark' },
-    ],
-  },
-  {
-    heading: 'AI',
-    items: [{ label: 'AI Mwalimu', to: '/teacher/ai-mwalimu', icon: 'cap' }],
-  },
-  {
-    heading: 'Communication',
-    items: [{ label: 'Announcements', to: '/teacher/announcements', icon: 'megaphone' }],
-  },
-]
+/**
+ * Safe API call. If the server answers with HTML (Vite's index.html, an Express
+ * "Cannot GET" page, a 404 page...) we show a clear message instead of the
+ * confusing "Unexpected token '<'" JSON parse error.
+ */
+async function api<T = unknown>(path: string, init: RequestInit = {}): Promise<T> {
+  let res: Response
+  try {
+    res = await fetch(`${API_BASE}${path}`, {
+      ...init,
+      headers: { ...authHeaders(), ...(init.headers || {}) },
+    })
+  } catch {
+    throw new Error('Cannot reach the server. Check that the backend is running.')
+  }
 
-const ICONS: Record<string, string> = {
-  grid: 'M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h6v6h-6z',
-  users: 'M9 11a3 3 0 100-6 3 3 0 000 6zM3 20c0-3 3-5 6-5s6 2 6 5M17 11a2.5 2.5 0 100-5M21 19c0-2-1.5-3.5-4-4',
-  user: 'M12 12a4 4 0 100-8 4 4 0 000 8zM5 21c0-4 3-6 7-6s7 2 7 6',
-  check: 'M4 6h16v14H4zM8 3v4M16 3v4M9 14l2 2 4-4',
-  pen: 'M4 20l4-1 11-11-3-3L5 16zM14 6l3 3',
-  bars: 'M5 20V10M12 20V4M19 20v-7',
-  trend: 'M3 17l6-6 4 4 8-8M15 7h6v6',
-  calendar: 'M4 6h16v14H4zM8 3v4M16 3v4M4 10h16',
-  book: 'M5 4h12a2 2 0 012 2v14H7a2 2 0 01-2-2zM5 18a2 2 0 012-2h12',
-  upload: 'M12 16V4M7 9l5-5 5 5M4 20h16',
-  spark: 'M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z',
-  cap: 'M2 9l10-5 10 5-10 5zM6 11v5c0 1.5 3 3 6 3s6-1.5 6-3v-5',
-  megaphone: 'M4 10v4h3l7 4V6L7 10zM18 9a4 4 0 010 6',
+  const type = res.headers.get('content-type') || ''
+  const isJson = type.includes('application/json')
+
+  if (!isJson) {
+    if (res.ok && (res.status === 204 || res.headers.get('content-length') === '0')) {
+      return undefined as T
+    }
+    if (type.includes('text/html')) {
+      throw new Error(
+        `The server returned a web page instead of data (${res.status}). ` +
+          `Check that the backend is running, the "/api" proxy is set in vite.config.ts, ` +
+          `and the route ${path} exists on the server.`,
+      )
+    }
+    if (res.ok) return undefined as T
+    throw new Error((await res.text()) || `Request failed (${res.status})`)
+  }
+
+  const data = await res.json()
+  if (!res.ok) {
+    const msg = (data && (data.message || data.error)) || `Request failed (${res.status})`
+    throw new Error(msg)
+  }
+  return data as T
 }
-
-const Icon = ({ name }: { name: string }) => (
-  <svg
-    className="tt-icon"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="1.8"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d={ICONS[name]} />
-  </svg>
-)
-
-/* ------------------------------------------------------------------ */
-/* Sidebar                                                             */
-/* ------------------------------------------------------------------ */
-const TeacherSidebar: React.FC = () => (
-  <aside className="tt-sidebar">
-    <div className="tt-brand">
-      <div className="tt-brand-logo">SP</div>
-      <div>
-        <div className="tt-brand-name">Senior School</div>
-        <div className="tt-brand-role">Teacher</div>
-        <div className="tt-brand-portal">PORTAL</div>
-      </div>
-    </div>
-
-    <nav className="tt-nav">
-      {NAV.map((group) => (
-        <div key={group.heading} className="tt-nav-group">
-          <div className="tt-nav-heading">{group.heading}</div>
-          {group.items.map((item) => (
-            <NavLink
-              key={item.to}
-              to={item.to}
-              className={({ isActive }) => `tt-nav-link${isActive ? ' active' : ''}`}
-            >
-              <Icon name={item.icon} />
-              <span>{item.label}</span>
-            </NavLink>
-          ))}
-        </div>
-      ))}
-    </nav>
-  </aside>
-)
 
 /* ------------------------------------------------------------------ */
 /* Add-lesson modal (admin / dean only)                                */
@@ -206,12 +144,7 @@ const AddLessonModal: React.FC<{
     setSaving(true)
     setError('')
     try {
-      const res = await fetch(`${API_BASE}/timetable`, {
-        method: 'POST',
-        headers: authHeaders(),
-        body: JSON.stringify(form),
-      })
-      if (!res.ok) throw new Error((await res.text()) || 'Could not save lesson')
+      await api('/timetable', { method: 'POST', body: JSON.stringify(form) })
       onSaved()
       onClose()
     } catch (err) {
@@ -304,23 +237,25 @@ function Timetables() {
   const [showModal, setShowModal] = useState(false)
   const [now, setNow] = useState(new Date())
 
-  const load = useCallback(async (silent = false) => {
-    if (!silent) setLoading(true)
-    try {
-      // Editors see everyone's timetable; teachers only see their own
-      const url = canEdit ? `${API_BASE}/timetable` : `${API_BASE}/timetable/me`
-      const res = await fetch(url, { headers: authHeaders() })
-      if (!res.ok) throw new Error(`Failed to load timetable (${res.status})`)
-      const data = await res.json()
-      setEntries(Array.isArray(data) ? data : data.entries ?? [])
-      setLastUpdated(new Date())
-      setError('')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load timetable')
-    } finally {
-      setLoading(false)
-    }
-  }, [canEdit])
+  const load = useCallback(
+    async (silent = false) => {
+      if (!silent) setLoading(true)
+      try {
+        // Editors see everyone's timetable; teachers only see their own
+        const data = await api<TimetableEntry[] | { entries?: TimetableEntry[] }>(
+          canEdit ? '/timetable' : '/timetable/me',
+        )
+        setEntries(Array.isArray(data) ? data : data?.entries ?? [])
+        setLastUpdated(new Date())
+        setError('')
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load timetable')
+      } finally {
+        setLoading(false)
+      }
+    },
+    [canEdit],
+  )
 
   // initial load + polling + refetch when the tab regains focus
   useEffect(() => {
@@ -343,20 +278,18 @@ function Timetables() {
   // teachers list for the admin form
   useEffect(() => {
     if (!canEdit) return
-    fetch(`${API_BASE}/teachers`, { headers: authHeaders() })
-      .then((r) => (r.ok ? r.json() : []))
-      .then((d) => setTeachers(Array.isArray(d) ? d : d.teachers ?? []))
+    api<Teacher[] | { teachers?: Teacher[] }>('/teachers')
+      .then((d) => setTeachers(Array.isArray(d) ? d : d?.teachers ?? []))
       .catch(() => setTeachers([]))
   }, [canEdit])
 
   const removeEntry = async (id: string) => {
     if (!window.confirm('Remove this lesson from the timetable?')) return
     try {
-      const res = await fetch(`${API_BASE}/timetable/${id}`, { method: 'DELETE', headers: authHeaders() })
-      if (!res.ok) throw new Error()
+      await api(`/timetable/${id}`, { method: 'DELETE' })
       setEntries((prev) => prev.filter((e) => e.id !== id))
-    } catch {
-      setError('Could not remove lesson. Please try again.')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not remove lesson. Please try again.')
     }
   }
 
@@ -472,7 +405,7 @@ function Timetables() {
 
           {error && (
             <div className="tt-alert">
-              {error}
+              <span>{error}</span>
               <button onClick={() => load()}>Retry</button>
             </div>
           )}
@@ -480,14 +413,18 @@ function Timetables() {
           {loading ? (
             <div className="tt-empty">Loading timetable…</div>
           ) : visible.length === 0 ? (
-            <div className="tt-empty">
-              <strong>No lessons on the timetable yet.</strong>
-              <span>
-                {canEdit
-                  ? 'Use “Add lesson” to build the timetable.'
-                  : 'Your timetable will appear here once the dean or admin publishes it.'}
-              </span>
-            </div>
+            // When the request failed, the red error above already explains why,
+            // so don't also claim "no lessons yet".
+            !error && (
+              <div className="tt-empty">
+                <strong>No lessons on the timetable yet.</strong>
+                <span>
+                  {canEdit
+                    ? 'Use “Add lesson” to build the timetable.'
+                    : 'Your timetable will appear here once the dean or admin publishes it.'}
+                </span>
+              </div>
+            )
           ) : view === 'today' ? (
             <div className="tt-today">
               {todayEntries.length === 0 ? (

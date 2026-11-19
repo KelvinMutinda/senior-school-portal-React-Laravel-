@@ -1,6 +1,8 @@
 import { useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import type { jsPDF } from "jspdf";
+// Shared teacher sidebar
+import TeacherSidebar from "../Teachers/TeacherSidebar";
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -47,7 +49,6 @@ export interface ViewResultsProps {
   termLabel?: string;
   userName?: string;
   theme?: "light" | "dark";
-  onNavigate?: (key: string) => void;
 }
 
 /* ------------------------------------------------------------------ */
@@ -409,77 +410,13 @@ async function saveClassPdf(opts: {
 }
 
 /* ------------------------------------------------------------------ */
-/* Icons and sidebar                                                   */
+/* Icons                                                               */
 /* ------------------------------------------------------------------ */
 
-type IconName =
-  | "dashboard" | "profile" | "classes" | "students" | "attendance" | "marks" | "results" | "comments"
-  | "tools" | "insights" | "messages" | "announcements" | "download" | "menu" | "close" | "warn";
+type IconName = "download" | "warn";
 
 const ICONS: Record<IconName, ReactNode> = {
-  dashboard: (
-    <>
-      <rect x="3" y="3" width="7" height="7" rx="1.5" />
-      <rect x="14" y="3" width="7" height="7" rx="1.5" />
-      <rect x="3" y="14" width="7" height="7" rx="1.5" />
-      <rect x="14" y="14" width="7" height="7" rx="1.5" />
-    </>
-  ),
-  profile: (
-    <>
-      <circle cx="12" cy="8" r="4" />
-      <path d="M4 21c0-4 4-6 8-6s8 2 8 6" />
-    </>
-  ),
-  classes: (
-    <>
-      <path d="M4 5.5A1.5 1.5 0 0 1 5.5 4H19v15H5.5A1.5 1.5 0 0 0 4 20.5z" />
-      <path d="M4 20.5A1.5 1.5 0 0 1 5.5 19H19M9 8h6" />
-    </>
-  ),
-  students: (
-    <>
-      <circle cx="9" cy="8" r="3.5" />
-      <path d="M2.5 20c0-3.6 3-5.5 6.5-5.5s6.5 1.9 6.5 5.5" />
-      <path d="M16 4.6a3.5 3.5 0 0 1 0 6.8M18 14.8c2 .7 3.5 2.2 3.5 5.2" />
-    </>
-  ),
-  attendance: (
-    <>
-      <rect x="3" y="5" width="18" height="16" rx="2" />
-      <path d="M3 10h18M8 3v4M16 3v4M9 15l2 2 4-4" />
-    </>
-  ),
-  marks: (
-    <>
-      <rect x="5" y="4" width="14" height="17" rx="2" />
-      <path d="M9 4V3h6v1M9 11h6M9 15h6" />
-    </>
-  ),
-  results: (
-    <>
-      <rect x="4" y="3" width="16" height="18" rx="2" />
-      <path d="M8 16v-3M12 16V9M16 16v-5" />
-    </>
-  ),
-  comments: <path d="M21 12a8 8 0 0 1-11.6 7.1L4 20l1-4.4A8 8 0 1 1 21 12z" />,
-  tools: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM18 16l.8 2.2L21 19l-2.2.8L18 22l-.8-2.2L15 19l2.2-.8z" />,
-  insights: <path d="M4 19h16M7 16v-4M12 16V8M17 16v-7" />,
-  messages: (
-    <>
-      <rect x="3" y="5" width="18" height="14" rx="2" />
-      <path d="M3 7l9 7 9-7" />
-    </>
-  ),
-  announcements: (
-    <>
-      <path d="M4 10v4h3l8 4V6L7 10H4z" />
-      <path d="M18.5 9.5a4 4 0 0 1 0 5" />
-    </>
-  ),
   download: <path d="M12 4v12M7 11l5 5 5-5M4 20h16" />,
-  menu: <path d="M4 6h16M4 12h16M4 18h16" />,
-  close: <path d="M6 6l12 12M18 6L6 18" />,
   warn: (
     <>
       <path d="M12 3l10 18H2z" />
@@ -493,107 +430,6 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
     <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
       {ICONS[name]}
     </svg>
-  );
-}
-
-interface NavItem {
-  key: string;
-  label: string;
-  icon: IconName;
-}
-
-const MENU: { group: string; items: NavItem[] }[] = [
-  {
-    group: "Overview",
-    items: [
-      { key: "dashboard", label: "Dashboard", icon: "dashboard" },
-      { key: "profile", label: "My Profile", icon: "profile" },
-    ],
-  },
-  {
-    group: "Academics",
-    items: [
-      { key: "classes", label: "Classes", icon: "classes" },
-      { key: "students", label: "Students", icon: "students" },
-      { key: "attendance", label: "Attendance", icon: "attendance" },
-      { key: "marks", label: "Marks Entry", icon: "marks" },
-      { key: "results", label: "View Results", icon: "results" },
-    ],
-  },
-  {
-    group: "AI",
-    items: [
-      { key: "ai-tools", label: "AI Tools", icon: "tools" },
-      { key: "ai-insights", label: "AI Insights", icon: "insights" },
-    ],
-  },
-  {
-    group: "Communication",
-    items: [
-      { key: "messages", label: "Messages", icon: "messages" },
-      { key: "announcements", label: "Announcements", icon: "announcements" },
-    ],
-  },
-];
-
-function Sidebar({
-  userName,
-  open,
-  onClose,
-  onNavigate,
-}: {
-  userName: string;
-  open: boolean;
-  onClose: () => void;
-  onNavigate?: (key: string) => void;
-}) {
-  return (
-    <aside id="portal-sidebar" className={`ss-sidebar${open ? " is-open" : ""}`}>
-      <div className="ss-brand">
-        <span className="ss-logo" aria-hidden="true">
-          <strong>SP</strong>
-        </span>
-        <div className="ss-brand-text">
-          <strong>Senior School</strong>
-          <em>Portal</em>
-          <small>PORTAL</small>
-        </div>
-        <button type="button" className="ss-close" aria-label="Close menu" onClick={onClose}>
-          <Icon name="close" />
-        </button>
-      </div>
-
-      <nav className="ss-nav" aria-label="Main navigation">
-        {MENU.map((group) => (
-          <div className="ss-group" key={group.group}>
-            <p className="ss-group-label">{group.group}</p>
-            {group.items.map((item) => {
-              const active = item.key === "results";
-              return (
-                <a
-                  key={item.key}
-                  href={`#${item.key}`}
-                  className={`ss-link${active ? " is-active" : ""}`}
-                  aria-current={active ? "page" : undefined}
-                  onClick={(e) => {
-                    onClose();
-                    if (onNavigate) {
-                      e.preventDefault();
-                      onNavigate(item.key);
-                    }
-                  }}
-                >
-                  <Icon name={item.icon} />
-                  <span>{item.label}</span>
-                </a>
-              );
-            })}
-          </div>
-        ))}
-      </nav>
-
-      <div className="ss-side-foot">{userName}</div>
-    </aside>
   );
 }
 
@@ -614,12 +450,9 @@ export default function ViewResults({
   years = SAMPLE_YEARS,
   schoolName = "Senior School",
   termLabel = "Term 3, 2026",
-  userName = "Mr. Otieno · Teacher",
+  userName = "Teacher",
   theme = "light",
-  onNavigate,
 }: ViewResultsProps) {
-  const [menuOpen, setMenuOpen] = useState(false);
-
   const [yearId, setYearId] = useState(years[0]?.id ?? "");
   const [classId, setClassId] = useState(years[0]?.classes[0]?.id ?? "");
   const [examId, setExamId] = useState("all");
@@ -804,18 +637,19 @@ export default function ViewResults({
   );
 
   return (
-    <div className="ss-shell" data-theme={theme}>
-      <Sidebar userName={userName} open={menuOpen} onClose={() => setMenuOpen(false)} onNavigate={onNavigate} />
-      <div className={`ss-scrim${menuOpen ? " is-open" : ""}`} onClick={() => setMenuOpen(false)} aria-hidden="true" />
+    // tt-shell gives the shared TeacherSidebar its colours and the 260px + content layout.
+    // ss-shell keeps the existing page styles (cards, tables, tabs) working.
+    <div className="tt-shell ss-shell" data-theme={theme} style={{ display: "grid", background: "var(--ss-canvas)" }}>
+      <TeacherSidebar />
 
       <div className="ss-main">
         <header className="ss-header">
-          <button type="button" className="ss-h-icon ss-h-burger" aria-label="Open menu" aria-controls="portal-sidebar" onClick={() => setMenuOpen(true)}>
-            <Icon name="menu" />
-          </button>
           <div className="ss-h-title">
             <p className="ss-h-name">View Results</p>
-            <span>Academics</span>
+            <span>Assessment</span>
+          </div>
+          <div className="ss-h-actions" style={{ marginLeft: "auto" }}>
+            <span className="ss-muted">{userName}</span>
           </div>
         </header>
 

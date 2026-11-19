@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import TeacherSidebar from './TeacherSidebar'
+import TeacherSidebar from '../TeacherSidebar'
 
 /* ------------------------------------------------------------------ */
 /* Config – adjust to match your backend                               */
@@ -217,7 +217,7 @@ function GetLearningMaterial() {
               <h1>Learning materials</h1>
               <p>Browse, search and download notes, slides, past papers and resources shared in your school.</p>
             </div>
-            <Link to="/teacher/materials/upload" className="tt-btn tt-btn-primary lm-upload-link">
+            <Link to="/Upload/LearningMaterial" className="tt-btn tt-btn-primary lm-upload-link">
               + Upload material
             </Link>
           </div>

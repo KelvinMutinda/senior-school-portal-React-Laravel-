@@ -55,7 +55,7 @@ const ROUTE = {
   results: "/Results/View/Results",
   progress: "/Academics/Progress",
   timetable: "/Academics/Timetable",
-  materials: "/Academic/LearningMaterials",
+  materials: "/Teacher/materials",
   upload: "/Upload/LearningMaterial",
   generate: "/AI/Chat",
   tutor: "/AI/Chat",

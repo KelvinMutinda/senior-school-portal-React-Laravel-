@@ -1,28 +1,4 @@
-/* ==========================================================================
-   Senior School Portal - App.css
-   One design language across every page: navy surfaces, a clear blue for
-   actions, a gold accent, 10 to 14px corners, soft shadows.
-   Every selector is scoped (.rl-page, .ss-shell, .ss-header, .lg-page,
-   .at-page), so sections do not leak into each other.
 
-   Contents
-   1. Register and form pages        (.rl-)
-   2. Dashboard shell                (.ss-)
-   3. Header                         (.ss-header, .ss-h-)
-   4. Teacher dashboard additions
-   5. Finance dashboard additions
-   6. Learner dashboard additions
-   7. Add subject page
-   8. Upload results page
-   9. View results page
-   10. Teacher dashboard redesign
-   11. Login page                    (.lg-)
-   12. AI Tutor                      (.at-)
-   ========================================================================== */
-
-/* ==========================================================================
-   1. Register Learner, Register Teacher and Add Subject forms
-   ========================================================================== */
 
 .rl-page {
   --navy-900: #0a1f3d;
@@ -4229,16 +4205,97 @@ em.up { color: var(--green); } em.down { color: var(--red); }
 }
 .tt-modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
-/* ---------- Responsive ---------- */
+/* ==========================================================================
+   Teacher sidebar: hamburger + off-canvas drawer (TeacherSidebar.tsx)
+   ========================================================================== */
+
+/* Hidden on desktop */
+.tt-burger,
+.tt-close,
+.tt-scrim { display: none; }
+
 @media (max-width: 900px) {
   .tt-shell { grid-template-columns: 1fr; }
-  .tt-sidebar { position: static; height: auto; max-height: 280px; }
-  .tt-content { padding: 16px; }
-  .tt-form-row { flex-direction: column; }
+
+  /* Hamburger button, fixed at the top-left, sits inside the top bar's space */
+  .tt-burger {
+    position: fixed;
+    top: 11px;
+    left: 12px;
+    z-index: 30;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    padding: 0;
+    background: #fff;
+    border: 1px solid var(--tt-border);
+    border-radius: 10px;
+    color: var(--tt-navy);
+    cursor: pointer;
+    box-shadow: 0 1px 2px rgba(11, 31, 63, .06);
+    transition: background .15s, border-color .15s;
+  }
+  .tt-burger:hover { background: #f0f4fa; border-color: var(--tt-blue); }
+  .tt-burger:focus-visible { outline: 2px solid var(--tt-amber); outline-offset: 2px; }
+
+  /* Make room for the button so it does not cover the page title */
+  .tt-topbar { padding-left: 64px; }
+
+  /* Sidebar becomes a slide-in drawer */
+  .tt-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    z-index: 50;
+    width: 280px;
+    max-width: 86vw;
+    height: 100vh;
+    height: 100dvh;
+    max-height: none;
+    transform: translateX(-100%);
+    transition: transform .25s ease;
+    visibility: hidden;
+  }
+  .tt-sidebar.is-open {
+    transform: none;
+    visibility: visible;
+    box-shadow: 8px 0 28px rgba(0, 0, 0, .35);
+  }
+
+  /* Dark overlay behind the drawer */
+  .tt-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 45;
+    background: rgba(6, 15, 29, .55);
+  }
+
+  /* Close (X) button inside the drawer */
+  .tt-close {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: auto;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    color: #cbd5e6;
+    cursor: pointer;
+  }
+  .tt-close:hover { background: var(--tt-navy-2); color: #fff; }
+  .tt-close:focus-visible { outline: 2px solid var(--tt-amber); outline-offset: 2px; }
 }
-/* ===== Learning materials page – paste into App.css (classes prefixed lm-) =====
-   Requires the shared layout/sidebar styles from timetable.css (tt-shell, tt-sidebar,
-   tt-topbar, tt-btn, tt-tabs, tt-empty, tt-alert ...). */
+
+@media (prefers-reduced-motion: reduce) {
+  .tt-sidebar, .tt-burger { transition: none; }
+}
 
 .lm-heading {
   display: flex;
@@ -4441,4 +4498,420 @@ em.up { color: var(--green); } em.down { color: var(--red); }
   .lm-view { margin-left: 0; }
   .lm-collection.list .lm-card { flex-direction: column; align-items: stretch; }
   .lm-collection.list .lm-action { width: 100%; }
+}
+/* ===== Upload learning material page – paste into App.css (classes prefixed um-) =====
+   Requires the shared layout/sidebar styles from timetable.css
+   (tt-shell, tt-sidebar, tt-topbar, tt-btn, tt-tabs, tt-alert ...). */
+
+.um-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 20px;
+  align-items: start;
+}
+
+.um-card {
+  background: #fff;
+  border: 1px solid var(--tt-border);
+  border-radius: 14px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.um-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.um-section-head h2 { margin: 0; font-size: 15px; }
+.um-section-head:not(:first-child) {
+  margin-top: 6px;
+  padding-top: 18px;
+  border-top: 1px solid var(--tt-border);
+}
+
+/* ---------- Dropzone ---------- */
+.um-drop {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  text-align: center;
+  padding: 36px 16px;
+  border: 2px dashed #c3d0e4;
+  border-radius: 14px;
+  background: var(--tt-bg);
+  color: var(--tt-muted);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.um-drop svg { width: 38px; height: 38px; color: var(--tt-blue); }
+.um-drop strong { color: var(--tt-text); font-size: 15px; }
+.um-drop span { font-size: 12px; }
+.um-drop:hover,
+.um-drop:focus-visible,
+.um-drop.over {
+  border-color: var(--tt-blue);
+  background: #eef4ff;
+  outline: none;
+}
+
+/* ---------- Selected file ---------- */
+.um-file {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--tt-border);
+  background: var(--tt-bg);
+  border-radius: 12px;
+  padding: 12px 14px;
+}
+.um-file-info { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.um-file-info strong {
+  font-size: 14px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.um-file-info span { font-size: 12px; color: var(--tt-muted); }
+.um-file-remove {
+  border: 0;
+  background: none;
+  color: #dc2626;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.um-file-remove:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.um-file-type {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 5px 10px;
+  border-radius: 6px;
+  background: #eef2f9;
+  color: #475569;
+  min-width: 64px;
+  text-align: center;
+}
+.um-file-type[data-type='pdf'] { background: #fee2e2; color: #b91c1c; }
+.um-file-type[data-type='doc'] { background: #dbeafe; color: #1d4ed8; }
+.um-file-type[data-type='ppt'] { background: #ffedd5; color: #c2410c; }
+.um-file-type[data-type='xls'] { background: #dcfce7; color: #15803d; }
+.um-file-type[data-type='video'] { background: #ede9fe; color: #6d28d9; }
+.um-file-type[data-type='image'] { background: #fce7f3; color: #be185d; }
+
+/* ---------- Form fields ---------- */
+.um-row { display: flex; gap: 12px; }
+.um-row .um-field { flex: 1; }
+
+.um-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tt-text);
+}
+.um-field em { font-weight: 500; font-style: normal; color: var(--tt-muted); }
+.um-field small { align-self: flex-end; font-weight: 500; color: var(--tt-muted); font-size: 11px; }
+.um-field input,
+.um-field select,
+.um-field textarea {
+  border: 1px solid var(--tt-border);
+  background: #fff;
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--tt-text);
+  resize: vertical;
+}
+.um-field input:focus,
+.um-field select:focus,
+.um-field textarea:focus {
+  outline: none;
+  border-color: var(--tt-blue);
+  box-shadow: 0 0 0 3px #1d5fd11f;
+}
+
+.um-error { margin-bottom: 0; }
+
+/* ---------- Progress ---------- */
+.um-progress { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--tt-muted); }
+.um-progress-bar { height: 8px; background: #e6ecf6; border-radius: 999px; overflow: hidden; }
+.um-progress-bar div {
+  height: 100%;
+  background: linear-gradient(90deg, var(--tt-blue), #4d8df0);
+  border-radius: 999px;
+  transition: width 0.2s ease;
+}
+
+.um-actions { display: flex; justify-content: flex-end; gap: 10px; }
+.um-link-btn { text-decoration: none; display: inline-block; }
+
+/* ---------- Tips ---------- */
+.um-tips {
+  position: sticky;
+  top: 84px;
+  background: #fff;
+  border: 1px solid var(--tt-border);
+  border-left: 3px solid var(--tt-amber);
+  border-radius: 14px;
+  padding: 18px;
+}
+.um-tips h3 { margin: 0 0 10px; font-size: 14px; }
+.um-tips ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 8px; }
+.um-tips li { font-size: 13px; color: var(--tt-muted); line-height: 1.45; }
+
+/* ---------- Success ---------- */
+.um-success {
+  max-width: 480px;
+  margin: 40px auto;
+  background: #fff;
+  border: 1px solid var(--tt-border);
+  border-radius: 16px;
+  padding: 36px 24px;
+  text-align: center;
+}
+.um-success-icon {
+  width: 56px;
+  height: 56px;
+  margin: 0 auto 14px;
+  border-radius: 50%;
+  background: #dcfce7;
+  color: #15803d;
+  font-size: 28px;
+  font-weight: 800;
+  display: grid;
+  place-items: center;
+}
+.um-success h2 { margin: 0 0 6px; font-size: 20px; }
+.um-success p { margin: 0 0 20px; color: var(--tt-muted); font-size: 14px; }
+.um-success-actions { display: flex; justify-content: center; flex-wrap: wrap; gap: 10px; }
+
+@media (max-width: 1100px) {
+  .um-layout { grid-template-columns: 1fr; }
+  .um-tips { position: static; }
+}
+@media (max-width: 600px) {
+  .um-row { flex-direction: column; }
+  .um-card { padding: 16px; }
+}
+
+.an-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+.an-heading-actions { display: flex; gap: 10px; flex-wrap: wrap; }
+
+/* ---------- Toolbar ---------- */
+.an-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.an-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.an-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--tt-border);
+  background: #fff;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--tt-text);
+  cursor: pointer;
+}
+.an-chip span {
+  background: #eef2f9;
+  border-radius: 999px;
+  min-width: 22px;
+  padding: 1px 7px;
+  font-size: 11px;
+  text-align: center;
+}
+.an-chip.active { background: var(--tt-blue); border-color: var(--tt-blue); color: #fff; }
+.an-chip.active span { background: #ffffff33; color: #fff; }
+
+.an-search {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #fff;
+  border: 1px solid var(--tt-border);
+  border-radius: 10px;
+  padding: 0 12px;
+  min-width: 240px;
+}
+.an-search svg { width: 18px; height: 18px; color: var(--tt-muted); flex-shrink: 0; }
+.an-search input {
+  flex: 1;
+  border: 0;
+  outline: none;
+  background: transparent;
+  padding: 9px 0;
+  font-size: 14px;
+  font-family: inherit;
+  color: var(--tt-text);
+}
+.an-search:focus-within { border-color: var(--tt-blue); box-shadow: 0 0 0 3px #1d5fd11f; }
+
+/* ---------- Feed ---------- */
+.an-feed { display: flex; flex-direction: column; gap: 12px; max-width: 860px; }
+
+.an-card {
+  position: relative;
+  background: #fff;
+  border: 1px solid var(--tt-border);
+  border-left: 4px solid #c3d0e4;
+  border-radius: 14px;
+  padding: 16px 18px;
+}
+.an-card.unread { background: #fbfdff; border-color: #cfe0fb; border-left-color: var(--tt-blue); }
+.an-card.priority-important { border-left-color: var(--tt-amber); }
+.an-card.priority-urgent { border-left-color: #dc2626; }
+.an-card.pinned { box-shadow: 0 4px 14px #0b1f3f10; }
+
+.an-card-head { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.an-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #e8f0ff;
+  color: var(--tt-blue);
+  font-weight: 700;
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.an-author { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.an-author strong { font-size: 14px; }
+.an-author span { font-size: 12px; color: var(--tt-muted); text-transform: capitalize; }
+
+.an-badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.an-badge {
+  font-size: 11px;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: #eef2f9;
+  color: #475569;
+  white-space: nowrap;
+}
+.an-badge.aud { background: #eaf1ff; color: var(--tt-blue); }
+.an-badge.pin { background: #fff4d9; color: #a15c00; }
+.an-badge.important { background: #ffedd5; color: #c2410c; }
+.an-badge.urgent { background: #fee2e2; color: #b91c1c; }
+
+.an-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+  font-size: 16px;
+  line-height: 1.35;
+}
+.an-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--tt-blue);
+  flex-shrink: 0;
+}
+
+.an-body {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.55;
+  color: #334155;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.an-body.clamp {
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.an-card-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 12px;
+}
+.an-link,
+.an-delete {
+  border: 0;
+  background: none;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 0;
+}
+.an-link { color: var(--tt-blue); }
+.an-link:hover { text-decoration: underline; }
+.an-delete { color: #94a3b8; }
+.an-delete:hover { color: #dc2626; }
+
+.an-skeleton {
+  height: 130px;
+  background: linear-gradient(90deg, #eef2f9 25%, #f7f9fd 50%, #eef2f9 75%);
+  background-size: 200% 100%;
+  animation: an-shimmer 1.3s infinite;
+  border-color: transparent;
+}
+@keyframes an-shimmer {
+  from { background-position: 200% 0; }
+  to { background-position: -200% 0; }
+}
+
+/* ---------- Compose modal extras (builds on .tt-modal) ---------- */
+.an-modal { max-width: 560px; }
+.an-modal textarea {
+  border: 1px solid var(--tt-border);
+  background: #fff;
+  border-radius: 8px;
+  padding: 10px;
+  font-size: 13px;
+  font-family: inherit;
+  color: var(--tt-text);
+  resize: vertical;
+}
+.an-modal textarea:focus,
+.an-modal input:focus,
+.an-modal select:focus {
+  outline: none;
+  border-color: var(--tt-blue);
+  box-shadow: 0 0 0 3px #1d5fd11f;
+}
+.an-modal small { align-self: flex-end; font-weight: 500; font-size: 11px; color: var(--tt-muted); }
+.an-modal .an-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--tt-text);
+  flex: none;
+}
+.an-modal .an-check input { width: 16px; height: 16px; padding: 0; }
+
+@media (max-width: 700px) {
+  .an-search { width: 100%; }
+  .an-card-head { flex-wrap: wrap; }
+  .an-badges { justify-content: flex-start; width: 100%; }
 }
