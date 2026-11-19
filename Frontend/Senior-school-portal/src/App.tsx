@@ -27,9 +27,11 @@ import FinanceReports from './Hoi/Finances/FinanceReports'
 import AiInsights from './Hoi/AI/AiInsights'
 import AiControl from './Hoi/AI/AiControl'
 import UploadLearning from './Teachers/UploadLearning'
-import ProgressRecords from './components/ProgressRecords'
+import ProgressRecords from './Teachers/ProgressRecords'
 import GetLearningMaterial from './Teachers/LearningMaterials/GetLearningMaterial'
 import Classes from './Teachers/Classes'
+import Attendance from './Teachers/Attendance'
+import Timetables from './Teachers/Timetable'
 
 
 function App() {
@@ -38,20 +40,20 @@ function App() {
     <Routes>
       <Route path="/Register/Learner" element={<RegisterLearner/>}/>
         <Route path="/Register/Teacher" element={<RegisterTeacher/>}/>
-        <Route path="Hoi/Dashboard" element={<HoiDashboard/>}/>
-        <Route path="Teacher/Dashboard" element={<TeacherDashboard/>}/>
-        <Route path="Learner/Dashboard" element={<LearnerDashboard/>}/>
-        <Route path="Finances/Dashboard" element={<FinanceDashboard/>}/>
-        <Route path="add/Subjects" element={<AddSubject/>}/>
-        <Route path="Results/Upload/Results" element={<UploadResults/>}/>
-        <Route path="Results/View/Results" element={<ViewResults/>}/>
+        <Route path="/Hoi/Dashboard" element={<HoiDashboard/>}/>
+        <Route path="/Teacher/Dashboard" element={<TeacherDashboard/>}/>
+        <Route path="/Learner/Dashboard" element={<LearnerDashboard/>}/>
+        <Route path="/Finances/Dashboard" element={<FinanceDashboard/>}/>
+        <Route path="/add/Subjects" element={<AddSubject/>}/>
+        <Route path="/Results/Upload/Results" element={<UploadResults/>}/>
+        <Route path="/Results/View/Results" element={<ViewResults/>}/>
         <Route path="/auth/Login" element={<Login/>}/>
-        <Route path="Academics/Results" element={<AcademicResults/>}/>
-         <Route path="Academics/Progress" element={<ProgressRecords/>}/>
+        <Route path="/Academics/Results" element={<AcademicResults/>}/>
+         <Route path="/Academics/Progress" element={<ProgressRecords/>}/>
         <Route path="/Academic/LearningMaterials" element={<LearningMaterials/>}/>
         <Route path="Academic/Timetable" element={<Timetable/>}/>
-        <Route path="Academic/Overview" element={<AcademicOverview/>}/>
-        <Route path="Finance/PayFees" element={<PayFees/>}/>
+        <Route path="/Academic/Overview" element={<AcademicOverview/>}/>
+        <Route path="/Finance/PayFees" element={<PayFees/>}/>
         <Route path="/Finance/Fee/Structure" element={<FeeStructure/>}/>
         <Route path="/Finance/Fee/statement" element={<FeeStatements/>}/>
         <Route path="/Finance/Reports" element={<FinanceReports/>}/>
@@ -62,10 +64,12 @@ function App() {
         <Route path="Hoi/AI/Insights" element={<AiInsights/>}/>
         <Route path="Hoi/AI/Controls" element={<AiControl/>}/>
         <Route path="/Learner/Profile"element={<Profile/>}/>
-        <Route path="Upload/LearningMaterial" element={<UploadLearning/>}/>
+        <Route path="/Upload/LearningMaterial" element={<UploadLearning/>}/>
         <Route path="/Academic/LearningMaterials" element={<GetLearningMaterial/>}/>
         <Route path="/Generate/LearningMaterial" element={<AiTutorPage/>}/>
-        <Route path="Academics/classes" element={<Classes/>}/>
+        <Route path="/Academics/classes" element={<Classes/>}/>
+        <Route path="/Academics/Attendance" element={<Attendance/>}/>
+        <Route path="/Academics/Timetable" element={<Timetables/>}/>
     </Routes>
   )
 }
