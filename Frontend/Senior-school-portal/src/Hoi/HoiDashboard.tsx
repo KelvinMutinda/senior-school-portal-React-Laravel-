@@ -79,7 +79,7 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
 export const MENU: MenuGroup[] = [
   { group: "Overview", items: [
     { key: "dashboard", label: "Dashboard", desc: "School overview", route: "/Hoi/Dashboard", perm: "dashboard.view", icon: "home" },
-    { key: "approvals", label: "Approvals", desc: "Marks, reports, waivers, reversals", route: "", perm: "approvals.review", icon: "shieldCheck", badge: "approvals", soon: true },
+    { key: "approvals", label: "Approvals", desc: "Marks, reports, waivers, reversals", route: "/Hoi/Approvals", perm: "approvals.review", icon: "shieldCheck", badge: "approvals" },
   ] },
   { group: "Academics", items: [
     { key: "academic", label: "Academic Overview", desc: "Class and stream performance", route: "/Academic/Overview", perm: "academic.overview", icon: "chart" },
@@ -109,13 +109,12 @@ export const MENU: MenuGroup[] = [
     { key: "ai-controls", label: "AI Controls", desc: "Enable, restrict or disable features", route: "/Hoi/AI/Controls", perm: "ai.controls", icon: "toggle" },
   ] },
   { group: "Communication", items: [
-    { key: "messages", label: "Messages", desc: "Direct messages", route: "", perm: "messages.use", icon: "message", badge: "messages", soon: true },
     { key: "announcements", label: "Announcements", desc: "Notices and publishing", route: "/Announcements", perm: "announcements.view", icon: "megaphone" },
   ] },
   { group: "Administration", items: [
     { key: "register-teacher", label: "Register Teacher", desc: "Onboard a new teacher or staff member", route: "/Register/Teacher", perm: "users.manage", icon: "userCog" },
     { key: "register-learner", label: "Register Learner", desc: "Admit and register a new learner", route: "/Register/Learner", perm: "users.manage", icon: "user" },
-    { key: "audit", label: "Audit Log and Settings", desc: "Read-only trail, terms, grading", route: "", perm: "audit.view", icon: "audit", soon: true },
+    { key: "audit", label: "Audit Log and Settings", desc: "Read-only trail, terms, grading", route: "/Hoi/Audit", perm: "audit.view", icon: "audit" },
   ] },
   { group: "Account", items: [
     { key: "profile", label: "My Profile", desc: "Details and password", route: "", perm: "profile.view", icon: "user", soon: true },

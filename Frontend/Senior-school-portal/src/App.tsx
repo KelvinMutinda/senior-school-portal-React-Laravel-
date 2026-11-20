@@ -37,6 +37,7 @@ import UploadLearningMaterial from './Teachers/LearningMaterials/UploadLearningM
 import Announcements from './Teachers/Annoucements'
 import LoginPage from './auth/Login'
 import AuditLog from './Hoi/AuditLog'
+import Approval from './Hoi/Approval'
 
 
 
@@ -82,7 +83,7 @@ function App() {
         <Route path="/Teacher/materials" element={<GetLearningMaterial/>}/>
         <Route path="/Announcements" element={<Announcements/>}/>
         <Route path="/" element={<LoginPage/>}/>
-
+        <Route path="/Hoi/Approvals" element={<Approval/>}/>
         <Route path="/Hoi/Audit" element={<AuditLog/>}/>
 
 

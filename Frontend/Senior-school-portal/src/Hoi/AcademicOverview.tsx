@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
-import { NavLink, useLocation, useNavigate } from "react-router-dom";
-
-/* All styling for this page lives in the STYLES string at the bottom of this file, so nothing else is imported. */
+import { useMemo, useState } from "react";
+import type { ReactNode } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
+import { DashboardLayout } from "./HoiDashboard";
 
 export type Grade = 10 | 11 | 12;
 type GradeFilter = "all" | Grade;
@@ -30,185 +29,24 @@ interface Props {
   getTermData?: (term: number) => TermData;
   currentTerm?: number;
   onNavigate?: (target: "results") => void;
-  /** Set to false if this page is already rendered inside a layout that has the sidebar and header. */
-  withShell?: boolean;
 }
 
 /* ================================================================== */
-/* Sidebar + header (the Head of Institution shell)                    */
+/* Shell: the shared HOI sidebar and header from HoiDashboard.tsx      */
 /* ================================================================== */
 
-interface NavItem { label: string; to: string; icon: string; badge?: "approvals" | "messages"; title?: string }
-
-const NAV: { section: string; items: NavItem[] }[] = [
-  { section: "Overview", items: [
-    { label: "Dashboard", to: "/Hoi/Dashboard", icon: "home", title: "Head of Institution Dashboard" },
-    { label: "Approvals", to: "/Hoi/Approvals", icon: "shield", badge: "approvals" },
-  ] },
-  { section: "Academics", items: [
-    { label: "Academic Overview", to: "/Academic/Overview", icon: "chart" },
-    {label:"Admit New Learner", to:"/Register/Learner",icon:"pen"},
-    {label:"Register Teacher", to:"/Register/Teacher",icon:"user"},
-    { label: "Students", to: "/Students", icon: "cap" },
-    { label: "Attendance", to: "/Hoi/Attendance", icon: "clipboard" },
-    { label: "Academic Results", to: "/Results/View/Results", icon: "pen" },
-  ] },
-  { section: "Finance", items: [
-   
-    { label: "Financial Reports", to: "/Finance/Reports", icon: "chart" },
-  ] },
-  { section: "AI", items: [
-    { label: "AI Insights", to: "/Hoi/AI/Insights", icon: "bolt" },
-    { label: "AI Controls", to: "/Hoi/AI/Controls", icon: "toggle" },
-  ] },
-  { section: "Communication", items: [
-    { label: "Messages", to: "/Hoi/Messages", icon: "chat", badge: "messages" },
-    { label: "Announcements", to: "/Hoi/Announcements", icon: "megaphone" },
-  ] },
-  { section: "Administration", items: [
-    { label: "User Management", to: "/Hoi/Users", icon: "user" },
-    { label: "Audit Log and Settings", to: "/Hoi/Audit", icon: "audit" },
-    {label: "Permissions", to:"", icon:"audit"},
-  ] },
-  { section: "Account", items: [{ label: "My Profile", to: "/Hoi/Profile", icon: "profile" }] },
-];
-
-const NAV_ICONS: Record<string, string> = {
-  home: "M4 11l8-7 8 7M6 10v10h12V10M10 20v-6h4v6",
-  shield: "M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6zM9 12l2.2 2.2L15.5 10",
-  chart: "M4 19V5M4 19h16M8 15l4-4 3 3 5-6",
-  cap: "M2 9l10-5 10 5-10 5zM6 11.5V16c0 1.5 3 3 6 3s6-1.5 6-3v-4.5",
-  clipboard: "M9 4h6v3H9zM7 6H5v14h14V6h-2M9 12h6M9 16h4",
-  pen: "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4",
-  wallet: "M4 7h14a2 2 0 012 2v9a2 2 0 01-2 2H6a2 2 0 01-2-2zM4 7l11-3v3M16 14h2",
-  receipt: "M6 3h12v18l-3-2-3 2-3-2-3 2zM9 8h6M9 12h6",
-  bolt: "M13 3L5 13h6l-1 8 8-10h-6z",
-  toggle: "M7 8h10a4 4 0 010 8H7a4 4 0 010-8zM16 12h.01",
-  chat: "M4 5h16v11H9l-5 4zM8 9h8M8 12h5",
-  megaphone: "M4 10v4h3l8 4V6L7 10zM18 9a4 4 0 010 6",
-  user: "M12 12a4 4 0 100-8 4 4 0 000 8zM4 20c1-4 4-6 8-6s7 2 8 6",
-  audit: "M5 4h14v16H5zM9 12l2 2 4-4",
-  profile: "M12 12a4 4 0 100-8 4 4 0 000 8zM4 20c1-4 4-6 8-6s7 2 8 6",
-  bell: "M6 16V11a6 6 0 1112 0v5l2 2H4zM10 20a2 2 0 004 0",
-  moon: "M20 14.5A8 8 0 019.5 4 8 8 0 1020 14.5z",
-  sun: "M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5L19 19M5 19l1.5-1.5M17.5 6.5L19 5",
-  search: "M11 18a7 7 0 100-14 7 7 0 000 14zM16 16l5 5",
-  check: "M5 12.5l4.5 4.5L19 7.5",
-  menu: "M4 7h16M4 12h16M4 17h16",
-  close: "M6 6l12 12M18 6L6 18",
-};
-
-function Ico({ name, size = 18 }: { name: string; size?: number }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-      <path d={NAV_ICONS[name] ?? NAV_ICONS.chart} />
-    </svg>
-  );
-}
-
-function ShellInner({ title, children }: { title: string; children: ReactNode }) {
-  const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
-  const [dark, setDark] = useState(() => localStorage.getItem("ssp-theme") === "dark");
-  const [q, setQ] = useState("");
-  const searchRef = useRef<HTMLInputElement>(null);
-
-  const badges = { approvals: 4, messages: 3 };
-  const notifications = 7;
-  const userName = "Head of Institution";
-  const today = new Date().toLocaleDateString("en-GB", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = dark ? "dark" : "light";
-    try { localStorage.setItem("ssp-theme", dark ? "dark" : "light"); } catch { /* storage blocked */ }
-  }, [dark]);
-
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const tag = (e.target as HTMLElement)?.tagName;
-      if (e.key === "/" && tag !== "INPUT" && tag !== "TEXTAREA" && tag !== "SELECT") { e.preventDefault(); searchRef.current?.focus(); }
-      if (e.key === "Escape") setOpen(false);
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, []);
-
-  const submitSearch = (e: FormEvent) => {
-    e.preventDefault();
-    if (q.trim()) navigate(`/Students?q=${encodeURIComponent(q.trim())}`);
-  };
-
-  return (
-    <div className="hoi-shell">
-      <a className="hoi-skip" href="#hoi-main">Skip to content</a>
-      {open && <div className="hoi-scrim" onClick={() => setOpen(false)} aria-hidden="true" />}
-
-      <aside className={`hoi-side${open ? " is-open" : ""}`} aria-label="Main navigation">
-        <div className="hoi-brand">
-          <span className="hoi-logo"><Ico name="cap" size={22} /></span>
-          <span className="hoi-brand-t"><b>Stephen</b><em>Kanja Senior School</em><small>Aim higher</small></span>
-          <button type="button" className="hoi-icon-btn hoi-close" onClick={() => setOpen(false)} aria-label="Close menu"><Ico name="close" /></button>
-        </div>
-        <nav className="hoi-nav">
-          {NAV.map((sec) => (
-            <div key={sec.section} className="hoi-sec">
-              <p className="hoi-sec-t">{sec.section}</p>
-              {sec.items.map((it) => {
-                const count = it.badge ? badges[it.badge] : 0;
-                return (
-                  <NavLink key={it.to} to={it.to} onClick={() => setOpen(false)} className={({ isActive }) => `hoi-link${isActive ? " is-active" : ""}`}>
-                    <Ico name={it.icon} />
-                    <span>{it.label}</span>
-                    {!!count && <i className="hoi-badge" aria-label={`${count} new`}>{count}</i>}
-                  </NavLink>
-                );
-              })}
-            </div>
-          ))}
-        </nav>
-        <div className="hoi-side-foot">Senior School Portal · v1.0</div>
-      </aside>
-
-      <div className="hoi-col">
-        <header className="hoi-top">
-          <button type="button" className="hoi-icon-btn hoi-burger" onClick={() => setOpen(true)} aria-label="Open menu" aria-expanded={open}><Ico name="menu" /></button>
-          <div className="hoi-title"><h1>{title}</h1><small>{today}</small></div>
-          <form className="hoi-search" role="search" onSubmit={submitSearch}>
-            <Ico name="search" size={16} />
-            <input ref={searchRef} value={q} onChange={(e) => setQ(e.target.value)} type="search" placeholder="Search learners, staff, records..." aria-label="Search learners, staff, records" />
-            <kbd aria-hidden="true">/</kbd>
-          </form>
-          <div className="hoi-actions">
-            <button type="button" className="hoi-approvals" onClick={() => navigate("/Hoi/Approvals")}><Ico name="check" size={16} /> <span>Approvals</span></button>
-            <button type="button" className="hoi-icon-btn hoi-bell" onClick={() => navigate("/Hoi/Announcements")} aria-label={`Notifications, ${notifications} unread`}>
-              <Ico name="bell" /><i className="hoi-badge sm">{notifications}</i>
-            </button>
-            <button type="button" className="hoi-icon-btn" onClick={() => setDark((d) => !d)} aria-label={dark ? "Switch to light mode" : "Switch to dark mode"} aria-pressed={dark}>
-              <Ico name={dark ? "sun" : "moon"} />
-            </button>
-            <button type="button" className="hoi-user" onClick={() => navigate("/Hoi/Profile")} aria-label="Open my profile">
-              <span className="hoi-avatar">HO</span>
-              <span className="hoi-user-t"><b>{userName}</b><small>HOI</small></span>
-            </button>
-          </div>
-        </header>
-        <main id="hoi-main" className="hoi-main" tabIndex={-1}>{children}</main>
-      </div>
-    </div>
-  );
-}
-
-/** Sidebar + header + styles. Import this in any other Head of Institution page. */
+/** Sidebar + header. Other HOI pages that import Shell from this file keep working. */
 export function Shell({ title, children }: { title: string; children: ReactNode }) {
   return (
-    <>
-     
-      <ShellInner title={title}>{children}</ShellInner>
-    </>
+    <DashboardLayout
+      role="HOI"
+      user={{ name: "Head of Institution", roleLabel: "HOI" }}
+      title={title}
+    >
+      {children}
+    </DashboardLayout>
   );
 }
-
-
 
 const TARGET = 65;                    // school target mean (%)
 const PASS = 50;
@@ -340,7 +178,7 @@ function TrendChart({ labels, series, focus }: { labels: string[]; series: { gra
 
 type SortKey = "class" | "learners" | "mean" | "change" | "pass" | "attendance" | "marks";
 
-function AcademicOverviewContent({ getTermData = sampleTermData, currentTerm = 2, onNavigate }: Omit<Props, "withShell">) {
+function AcademicOverviewContent({ getTermData = sampleTermData, currentTerm = 2, onNavigate }: Props) {
   const [term, setTerm] = useState(currentTerm);
   const [grade, setGrade] = useState<GradeFilter>("all");
   const [sort, setSort] = useState<{ key: SortKey; dir: 1 | -1 }>({ key: "mean", dir: -1 });
@@ -720,26 +558,29 @@ function AcademicOverviewContent({ getTermData = sampleTermData, currentTerm = 2
 }
 
 /* ------------------------------------------------------------------ */
-/* Default export: the page with its sidebar and header                */
+/* Default export: the page inside the shared HOI sidebar and header  */
 /* ------------------------------------------------------------------ */
 
-function AcademicOverview({ withShell = true, onNavigate, ...rest }: Props) {
+function AcademicOverview({ onNavigate, ...rest }: Props) {
   const navigate = useNavigate();
   const go = onNavigate ?? (() => navigate("/Results/View/Results"));
-  const content = <AcademicOverviewContent {...rest} onNavigate={go} />;
-  return withShell ? <Shell title="Academic Overview">{content}</Shell> : <><style>{STYLES}</style>{content}</>;
+  return (
+    <Shell title="Academic Overview">
+      <AcademicOverviewContent {...rest} onNavigate={go} />
+    </Shell>
+  );
 }
 
 export default AcademicOverview;
 
-/** Optional: use as the element for sidebar links whose pages are not built yet. */
+/** Optional: use as the element for routes whose pages are not built yet. */
 export function ComingSoon() {
   const { pathname } = useLocation();
   return (
     <Shell title="Coming soon">
       <div style={{ maxWidth: 520, margin: "10vh auto", textAlign: "center" }}>
         <h2>This page is not built yet</h2>
-        <p style={{ color: "var(--ink-2)" }}>The link works. Replace this route with the real page when it is ready.</p>
+        <p style={{ color: "var(--ss-muted)" }}>The link works. Replace this route with the real page when it is ready.</p>
         <code>{pathname}</code>
       </div>
     </Shell>
@@ -809,8 +650,3 @@ function sampleTermData(term: number): TermData {
     trend: { labels, byGrade },
   };
 }
-
-/* ==========================================================================
-   Styles (sidebar, header and page). Injected by the <style> tag above.
-   ========================================================================== */
-
