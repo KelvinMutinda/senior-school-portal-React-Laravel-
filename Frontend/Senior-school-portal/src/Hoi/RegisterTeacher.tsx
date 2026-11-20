@@ -1,13 +1,12 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "./HoiDashboard";
-
-
+import { toast } from "../components/Toast";
+import { registerTeacher, ApiValidationError } from "../api/teachers";
 
 export type Gender = "Female" | "Male" | "";
 export type EmploymentType = "TSC Permanent" | "TSC Contract" | "BOM Employed" | "Intern / Attachment" | "";
 
 export interface TeacherForm {
-  
   firstName: string;
   middleName: string;
   surname: string;
@@ -38,7 +37,7 @@ export interface TeacherForm {
   graduationYear: string;
   specialization: string;
   certificates: File[];
-  
+
   teachingSubjects: string[];
   grades: string[];
   classTeacherOf: string;
@@ -55,10 +54,9 @@ export interface TeacherForm {
 type Errors = Record<string, string>;
 
 interface Props {
+  /** Optional override (tests, previews). By default the form posts to the Laravel API. */
   onSubmit?: (data: TeacherForm) => void | Promise<void>;
 }
-
-
 
 const initialForm: TeacherForm = {
   firstName: "",
@@ -117,6 +115,14 @@ const RELATIONSHIPS = ["Spouse", "Parent", "Sibling", "Child", "Relative", "Frie
 const phoneOk = (v: string) => /^(?:\+254|0)[17]\d{8}$/.test(v.replace(/\s/g, ""));
 const emailOk = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
 
+/** "Fix N fields" style summary used for both client and server validation failures. */
+const summarise = (errs: Errors): string => {
+  const messages = Object.values(errs);
+  const first = messages[0];
+  const more = messages.length - 1;
+  return more > 0 ? `${first} (and ${more} more issue${more > 1 ? "s" : ""} below)` : first;
+};
+
 /* Field wrapper (kept outside the page component so inputs keep focus while typing) */
 function Field({ id, label, error, hint, children }: { id: string; label: string; error?: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -135,19 +141,30 @@ function RegisterTeacher({ onSubmit }: Props) {
   const [form, setForm] = useState<TeacherForm>(initialForm);
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
 
   const photoUrl = useMemo(() => (form.photo ? URL.createObjectURL(form.photo) : null), [form.photo]);
   useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl); }, [photoUrl]);
 
-  const set = <K extends keyof TeacherForm>(key: K, value: TeacherForm[K]) =>
-    setForm((f) => ({ ...f, [key]: value }));
+  /** Drop a field's error as soon as the user edits it. */
+  const clearError = (key: string) =>
+    setErrors((prev) => {
+      if (!prev[key]) return prev;
+      const { [key]: _removed, ...rest } = prev;
+      return rest;
+    });
 
-  const toggle = (key: "teachingSubjects" | "grades", value: string) =>
+  const set = <K extends keyof TeacherForm>(key: K, value: TeacherForm[K]) => {
+    setForm((f) => ({ ...f, [key]: value }));
+    clearError(key);
+  };
+
+  const toggle = (key: "teachingSubjects" | "grades", value: string) => {
     setForm((f) => ({
       ...f,
       [key]: f[key].includes(value) ? f[key].filter((x) => x !== value) : [...f[key], value],
     }));
+    clearError(key);
+  };
 
   const isTsc = form.employmentType.startsWith("TSC");
 
@@ -178,20 +195,47 @@ function RegisterTeacher({ onSubmit }: Props) {
     return e;
   };
 
+  const focusFirstInvalid = () =>
+    // Wait a tick so the error state has rendered and data-invalid is on the DOM.
+    setTimeout(() => document.querySelector<HTMLElement>("[data-invalid='true']")?.focus(), 0);
+
   const handleSubmit = async (ev: React.FormEvent) => {
     ev.preventDefault();
+    if (saving) return;
+
     const e = validate();
     setErrors(e);
-    setDone(null);
     if (Object.keys(e).length) {
-      document.querySelector<HTMLElement>("[data-invalid='true']")?.focus();
+      toast.error(summarise(e));
+      focusFirstInvalid();
       return;
     }
+
     setSaving(true);
     try {
-      await onSubmit?.(form);
-      setDone(`${form.firstName} ${form.surname} has been registered.`);
+      const name = `${form.firstName} ${form.surname}`.trim();
+      let emailSent = true;
+
+      if (onSubmit) {
+        await onSubmit(form);
+      } else {
+        emailSent = (await registerTeacher(form)).login_email_sent;
+      }
+
+      toast.success(`${name} has been registered.`);
+      if (form.sendLogin && !emailSent) {
+        toast.error("The account was created, but the login email could not be sent.");
+      }
       setForm(initialForm);
+      setErrors({});
+    } catch (err) {
+      if (err instanceof ApiValidationError && Object.keys(err.errors).length) {
+        setErrors(err.errors);
+        toast.error(summarise(err.errors));
+        focusFirstInvalid();
+      } else {
+        toast.error(err instanceof Error ? err.message : "Could not register the teacher. Please try again.");
+      }
     } finally {
       setSaving(false);
     }
@@ -231,8 +275,6 @@ function RegisterTeacher({ onSubmit }: Props) {
           <p>Add a new teacher to the Senior School Portal. Fields marked * are required.</p>
         </header>
 
-        {done && <div className="rl-ok" role="status">{done}</div>}
-
         <form onSubmit={handleSubmit} noValidate>
           {/* 1. Personal */}
           <section className="rl-card">
@@ -241,8 +283,10 @@ function RegisterTeacher({ onSubmit }: Props) {
               <div className="rl-avatar">{photoUrl ? <img src={photoUrl} alt="Selected teacher" /> : <span>No photo</span>}</div>
               <div>
                 <label htmlFor="photo" className="rl-btn">Upload photo</label>
-                <input id="photo" type="file" accept="image/*" hidden onChange={(e) => set("photo", e.target.files?.[0] ?? null)} />
-                <small>JPG or PNG, passport style.</small>
+                <input id="photo" type="file" accept="image/*" hidden {...inv("photo")} onChange={(e) => set("photo", e.target.files?.[0] ?? null)} />
+                {errors.photo
+                  ? <small className="rl-err" role="alert">{errors.photo}</small>
+                  : <small>JPG or PNG, passport style, up to 2 MB.</small>}
               </div>
             </div>
             <div className="rl-grid">
@@ -272,7 +316,7 @@ function RegisterTeacher({ onSubmit }: Props) {
               {text("designation", "Designation", { req: true, placeholder: "e.g. Senior Teacher" })}
               {text("jobGroup", "Job group")}
               {select("department", "Department", DEPARTMENTS, true)}
-              {text("kraPin", "KRA PIN")}
+              {text("kraPin", "KRA PIN", { placeholder: "A123456789Z" })}
               {text("nssfNo", "NSSF number")}
               {text("shaNo", "SHA number")}
             </div>
@@ -290,12 +334,16 @@ function RegisterTeacher({ onSubmit }: Props) {
             <div className="rl-photo" style={{ marginTop: 20, marginBottom: 0 }}>
               <div>
                 <label htmlFor="certs" className="rl-btn">Upload certificates</label>
-                <input id="certs" type="file" accept=".pdf,image/*" multiple hidden onChange={(e) => set("certificates", Array.from(e.target.files ?? []))} />
-                <small>
-                  {form.certificates.length
-                    ? `${form.certificates.length} file${form.certificates.length > 1 ? "s" : ""} selected: ${form.certificates.map((f) => f.name).join(", ")}`
-                    : "PDF or image copies of academic and professional certificates."}
-                </small>
+                <input id="certs" type="file" accept=".pdf,image/*" multiple hidden {...inv("certificates")} onChange={(e) => set("certificates", Array.from(e.target.files ?? []))} />
+                {errors.certificates ? (
+                  <small className="rl-err" role="alert">{errors.certificates}</small>
+                ) : (
+                  <small>
+                    {form.certificates.length
+                      ? `${form.certificates.length} file${form.certificates.length > 1 ? "s" : ""} selected: ${form.certificates.map((f) => f.name).join(", ")}`
+                      : "PDF or image copies of academic and professional certificates (5 MB each)."}
+                  </small>
+                )}
               </div>
             </div>
           </section>
@@ -331,17 +379,18 @@ function RegisterTeacher({ onSubmit }: Props) {
             </fieldset>
 
             <div className="rl-grid" style={{ marginTop: 20 }}>
-              <Field id="classTeacherOf" label="Class teacher of" hint="Leave blank if not a class teacher">
-                <select id="classTeacherOf" value={form.classTeacherOf} onChange={(e) => set("classTeacherOf", e.target.value)}>
+              <Field id="classTeacherOf" label="Class teacher of" error={errors.classTeacherOf} hint="Leave blank if not a class teacher">
+                <select id="classTeacherOf" value={form.classTeacherOf} onChange={(e) => set("classTeacherOf", e.target.value)} {...inv("classTeacherOf")}>
                   <option value="">None</option>
                   {GRADES.flatMap((g) => STREAMS.map((s) => <option key={`${g}${s}`} value={`${g}${s}`}>Grade {g}{s}</option>))}
                 </select>
               </Field>
             </div>
             <label className="rl-check" style={{ marginTop: 12 }}>
-              <input type="checkbox" checked={form.isHod} onChange={(e) => set("isHod", e.target.checked)} />
+              <input type="checkbox" checked={form.isHod} onChange={(e) => set("isHod", e.target.checked)} {...inv("isHod")} />
               This teacher is a head of department
             </label>
+            {errors.isHod && <small className="rl-err" role="alert">{errors.isHod}</small>}
           </section>
 
           {/* 5. Next of kin */}
@@ -369,7 +418,7 @@ function RegisterTeacher({ onSubmit }: Props) {
           </section>
 
           <div className="rl-actions">
-            <button type="button" className="rl-btn" onClick={() => { setForm(initialForm); setErrors({}); setDone(null); }}>Clear form</button>
+            <button type="button" className="rl-btn" disabled={saving} onClick={() => { setForm(initialForm); setErrors({}); }}>Clear form</button>
             <button type="submit" className="rl-btn rl-primary" disabled={saving}>{saving ? "Saving…" : "Register teacher"}</button>
           </div>
         </form>
