@@ -36,6 +36,7 @@ import Timetables from './Teachers/Timetable'
 import UploadLearningMaterial from './Teachers/LearningMaterials/UploadLearningMaterial'
 import Announcements from './Teachers/Annoucements'
 import LoginPage from './auth/Login'
+import AuditLog from './Hoi/AuditLog'
 
 
 
@@ -81,6 +82,8 @@ function App() {
         <Route path="/Teacher/materials" element={<GetLearningMaterial/>}/>
         <Route path="/Announcements" element={<Announcements/>}/>
         <Route path="/" element={<LoginPage/>}/>
+
+        <Route path="/Hoi/Audit" element={<AuditLog/>}/>
 
 
     </Routes>
