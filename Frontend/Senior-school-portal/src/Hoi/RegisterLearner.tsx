@@ -1,5 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { DashboardLayout, type LayoutUser, type Role } from "../Hoi/HoiDashboard";
+import { registerLearner, ApiError } from "../api/Learner";
+import { toast } from "../components/Toast";
 
 /* ---------- Types ---------- */
 
@@ -57,8 +59,14 @@ export interface LearnerForm {
 
 type Errors = Record<string, string>;
 
+/** What the API returns on success. Custom onSubmit handlers may return nothing. */
+export type SubmitResult =
+  | { message?: string; learner?: { id: number; admission_no: string; name: string } }
+  | void;
+
 interface Props {
-  onSubmit?: (data: LearnerForm) => void | Promise<void>;
+  /** Defaults to the Laravel API call in src/api/learners.ts. */
+  onSubmit?: (data: LearnerForm) => SubmitResult | Promise<SubmitResult>;
   role?: Role; // who is registering the learner (sidebar follows this role)
   user?: LayoutUser;
   onNavigate?: (route: string, key: string) => void;
@@ -127,8 +135,26 @@ const ROLE_LABEL: Record<Role, string> = {
   FINANCE: "Finance",
 };
 
+const MAX_PHOTO_BYTES = 2 * 1024 * 1024; // the API allows 2 MB
+
 const phoneOk = (v: string) => /^(?:\+254|0)[17]\d{8}$/.test(v.replace(/\s/g, ""));
 const emailOk = (v: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v);
+
+/** Laravel returns keys like "primaryGuardian.phone"; this form uses "pg.phone". */
+function mapServerErrors(errs: Record<string, string[]>): Errors {
+  const out: Errors = {};
+  Object.entries(errs).forEach(([k, msgs]) => {
+    const key = k
+      .replace(/^primaryGuardian\./, "pg.")
+      .replace(/^secondaryGuardian\./, "sg.")
+      .replace(/^subjects\.\d+$/, "subjects");
+    if (!out[key] && msgs?.[0]) out[key] = msgs[0];
+  });
+  return out;
+}
+
+const focusFirstInvalid = () =>
+  requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-invalid='true']")?.focus());
 
 /* ---------- Component ---------- */
 
@@ -145,11 +171,11 @@ function Field({ id, label, error, hint, children }: { id: string; label: string
 }
 
 
-function RegisterLearner({ onSubmit, role = "HOI", user, onNavigate, onLogout }: Props) {
+function RegisterLearner({ onSubmit = registerLearner, role = "HOI", user, onNavigate, onLogout }: Props) {
   const [form, setForm] = useState<LearnerForm>(initialForm);
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
-  const [done, setDone] = useState<string | null>(null);
+  const [formKey, setFormKey] = useState(0); // bumping this remounts the form, which also clears the file input
 
   const photoUrl = useMemo(() => (form.photo ? URL.createObjectURL(form.photo) : null), [form.photo]);
   useEffect(() => () => { if (photoUrl) URL.revokeObjectURL(photoUrl); }, [photoUrl]);
@@ -173,6 +199,7 @@ function RegisterLearner({ onSubmit, role = "HOI", user, onNavigate, onLogout }:
     req("surname", form.surname, "Enter the learner's surname");
     if (!form.gender) e.gender = "Select a gender";
     req("dateOfBirth", form.dateOfBirth, "Enter the date of birth");
+    if (form.photo && form.photo.size > MAX_PHOTO_BYTES) e.photo = "The photo must be 2 MB or smaller";
     req("admissionNo", form.admissionNo, "Enter the admission number");
     req("admissionDate", form.admissionDate, "Enter the admission date");
     if (!form.grade) e.grade = "Select a grade";
@@ -185,6 +212,13 @@ function RegisterLearner({ onSubmit, role = "HOI", user, onNavigate, onLogout }:
     if (!g.relationship) e["pg.relationship"] = "Select the relationship";
     if (!phoneOk(g.phone)) e["pg.phone"] = "Enter a valid Kenyan phone number, e.g. 0712 345 678";
     if (g.email && !emailOk(g.email)) e["pg.email"] = "Enter a valid email address";
+    // The second guardian is optional, but must be complete once started.
+    const s = form.secondaryGuardian;
+    if (s.fullName.trim()) {
+      if (!s.relationship) e["sg.relationship"] = "Select the relationship";
+      if (!phoneOk(s.phone)) e["sg.phone"] = "Enter a valid Kenyan phone number";
+    }
+    if (s.email && !emailOk(s.email)) e["sg.email"] = "Enter a valid email address";
     req("emergencyName", form.emergencyName, "Enter an emergency contact");
     if (!phoneOk(form.emergencyPhone)) e.emergencyPhone = "Enter a valid Kenyan phone number";
     if (!form.consentDataUse) e.consentDataUse = "Guardian consent to data use is required";
@@ -193,19 +227,50 @@ function RegisterLearner({ onSubmit, role = "HOI", user, onNavigate, onLogout }:
 
   const handleSubmit = async (ev: React.FormEvent) => {
     ev.preventDefault();
+    if (saving) return;
+
     const e = validate();
     setErrors(e);
-    setDone(null);
-    if (Object.keys(e).length) {
-      const first = document.querySelector<HTMLElement>("[data-invalid='true']");
-      first?.focus();
+    const count = Object.keys(e).length;
+    if (count) {
+      toast.error("Some details need attention", `Please fix the ${count} highlighted ${count === 1 ? "field" : "fields"} and try again.`);
+      focusFirstInvalid();
       return;
     }
+
     setSaving(true);
     try {
-      await onSubmit?.(form);
-      setDone(`${form.firstName} ${form.surname} has been registered.`);
+      const result = await onSubmit(form);
+      const name = `${form.firstName} ${form.surname}`.trim();
+      toast.success(
+        "Learner registered",
+        result && result.learner
+          ? `${result.learner.name} (Adm. ${result.learner.admission_no}) has been added to the portal.`
+          : `${name} has been added to the portal.`,
+      );
       setForm(initialForm);
+      setErrors({});
+      setFormKey((k) => k + 1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 422) {
+        // The server rejected specific fields: show them inline and in a toast.
+        const mapped = mapServerErrors(err.errors);
+        const n = Object.keys(mapped).length;
+        setErrors(mapped);
+        toast.error("Check the highlighted fields", n > 1 ? `${err.message} (and ${n - 1} more)` : err.message);
+        focusFirstInvalid();
+      } else if (err instanceof ApiError && err.status === 401) {
+        toast.error("Please log in again", "Your session has expired.");
+      } else if (err instanceof ApiError && err.status === 403) {
+        toast.error("Not allowed", "You do not have permission to register learners.");
+      } else if (err instanceof ApiError && err.status >= 500) {
+        toast.error("Something went wrong", "The server could not save this learner, and nothing was saved. Try again, and tell the administrator if it keeps happening.");
+      } else if (err instanceof ApiError) {
+        toast.error("Could not register the learner", err.message);
+      } else {
+        toast.error("Cannot reach the server", "Check your connection and that the backend is running, then try again.");
+      }
     } finally {
       setSaving(false);
     }
@@ -227,23 +292,23 @@ function RegisterLearner({ onSubmit, role = "HOI", user, onNavigate, onLogout }:
             {RELATIONSHIPS.map((r) => <option key={r}>{r}</option>)}
           </select>
         </Field>
-        <Field id={`${prefix}-id`} label="National ID number">
-          <input id={`${prefix}-id`} inputMode="numeric" value={g.nationalId} onChange={(e) => setGuardian(which, "nationalId", e.target.value)} />
+        <Field id={`${prefix}-id`} label="National ID number" error={errors[p("nationalId")]}>
+          <input id={`${prefix}-id`} inputMode="numeric" value={g.nationalId} onChange={(e) => setGuardian(which, "nationalId", e.target.value)} {...inv(p("nationalId"))} />
         </Field>
         <Field id={`${prefix}-phone`} label={`Phone${required ? " *" : ""}`} error={errors[p("phone")]}>
           <input id={`${prefix}-phone`} type="tel" placeholder="0712 345 678" value={g.phone} onChange={(e) => setGuardian(which, "phone", e.target.value)} {...inv(p("phone"))} />
         </Field>
-        <Field id={`${prefix}-alt`} label="Alternative phone">
-          <input id={`${prefix}-alt`} type="tel" value={g.altPhone} onChange={(e) => setGuardian(which, "altPhone", e.target.value)} />
+        <Field id={`${prefix}-alt`} label="Alternative phone" error={errors[p("altPhone")]}>
+          <input id={`${prefix}-alt`} type="tel" value={g.altPhone} onChange={(e) => setGuardian(which, "altPhone", e.target.value)} {...inv(p("altPhone"))} />
         </Field>
         <Field id={`${prefix}-email`} label="Email" error={errors[p("email")]}>
           <input id={`${prefix}-email`} type="email" value={g.email} onChange={(e) => setGuardian(which, "email", e.target.value)} {...inv(p("email"))} />
         </Field>
-        <Field id={`${prefix}-occ`} label="Occupation">
-          <input id={`${prefix}-occ`} value={g.occupation} onChange={(e) => setGuardian(which, "occupation", e.target.value)} />
+        <Field id={`${prefix}-occ`} label="Occupation" error={errors[p("occupation")]}>
+          <input id={`${prefix}-occ`} value={g.occupation} onChange={(e) => setGuardian(which, "occupation", e.target.value)} {...inv(p("occupation"))} />
         </Field>
-        <Field id={`${prefix}-addr`} label="Home address / county">
-          <input id={`${prefix}-addr`} value={g.address} onChange={(e) => setGuardian(which, "address", e.target.value)} />
+        <Field id={`${prefix}-addr`} label="Home address / county" error={errors[p("address")]}>
+          <input id={`${prefix}-addr`} value={g.address} onChange={(e) => setGuardian(which, "address", e.target.value)} {...inv(p("address"))} />
         </Field>
       </div>
     );
@@ -259,16 +324,14 @@ function RegisterLearner({ onSubmit, role = "HOI", user, onNavigate, onLogout }:
       onLogout={onLogout}
     >
       <div className="rl-page">
-      
+
         <header className="rl-head">
           <h1>Register learner</h1>
           <p>Add a new learner to the Senior School Portal. Fields marked * are required.</p>
         </header>
 
-        {done && <div className="rl-ok" role="status">{done}</div>}
+        <form key={formKey} onSubmit={handleSubmit} noValidate>
 
-        <form onSubmit={handleSubmit} noValidate>
-    
           <section className="rl-card">
             <h2>Learner details</h2>
             <div className="rl-photo">
@@ -276,15 +339,16 @@ function RegisterLearner({ onSubmit, role = "HOI", user, onNavigate, onLogout }:
               <div>
                 <label htmlFor="photo" className="rl-btn">Upload photo</label>
                 <input id="photo" type="file" accept="image/*" hidden onChange={(e) => set("photo", e.target.files?.[0] ?? null)} />
-                <small>JPG or PNG, passport style.</small>
+                <small>JPG or PNG, passport style, up to 2 MB.</small>
+                {errors.photo && <small className="rl-err" role="alert">{errors.photo}</small>}
               </div>
             </div>
             <div className="rl-grid">
               <Field id="firstName" label="First name *" error={errors.firstName}>
                 <input id="firstName" value={form.firstName} onChange={(e) => set("firstName", e.target.value)} {...inv("firstName")} />
               </Field>
-              <Field id="middleName" label="Middle name">
-                <input id="middleName" value={form.middleName} onChange={(e) => set("middleName", e.target.value)} />
+              <Field id="middleName" label="Middle name" error={errors.middleName}>
+                <input id="middleName" value={form.middleName} onChange={(e) => set("middleName", e.target.value)} {...inv("middleName")} />
               </Field>
               <Field id="surname" label="Surname *" error={errors.surname}>
                 <input id="surname" value={form.surname} onChange={(e) => set("surname", e.target.value)} {...inv("surname")} />
@@ -297,19 +361,19 @@ function RegisterLearner({ onSubmit, role = "HOI", user, onNavigate, onLogout }:
               <Field id="dob" label="Date of birth *" error={errors.dateOfBirth}>
                 <input id="dob" type="date" value={form.dateOfBirth} onChange={(e) => set("dateOfBirth", e.target.value)} {...inv("dateOfBirth")} />
               </Field>
-              <Field id="nationality" label="Nationality">
-                <input id="nationality" value={form.nationality} onChange={(e) => set("nationality", e.target.value)} />
+              <Field id="nationality" label="Nationality" error={errors.nationality}>
+                <input id="nationality" value={form.nationality} onChange={(e) => set("nationality", e.target.value)} {...inv("nationality")} />
               </Field>
-              <Field id="birthCert" label="Birth certificate number">
-                <input id="birthCert" value={form.birthCertNo} onChange={(e) => set("birthCertNo", e.target.value)} />
+              <Field id="birthCert" label="Birth certificate number" error={errors.birthCertNo}>
+                <input id="birthCert" value={form.birthCertNo} onChange={(e) => set("birthCertNo", e.target.value)} {...inv("birthCertNo")} />
               </Field>
-              <Field id="upi" label="UPI (NEMIS)" hint="Unique Personal Identifier from NEMIS">
-                <input id="upi" value={form.upi} onChange={(e) => set("upi", e.target.value)} />
+              <Field id="upi" label="UPI (NEMIS)" hint="Unique Personal Identifier from NEMIS" error={errors.upi}>
+                <input id="upi" value={form.upi} onChange={(e) => set("upi", e.target.value)} {...inv("upi")} />
               </Field>
             </div>
           </section>
 
-      
+
           <section className="rl-card">
             <h2>Admission and academics</h2>
             <div className="rl-grid">
@@ -340,14 +404,14 @@ function RegisterLearner({ onSubmit, role = "HOI", user, onNavigate, onLogout }:
                   <option value="">Select</option><option>Day</option><option>Boarding</option>
                 </select>
               </Field>
-              <Field id="prevSchool" label="Previous (junior) school">
-                <input id="prevSchool" value={form.previousSchool} onChange={(e) => set("previousSchool", e.target.value)} />
+              <Field id="prevSchool" label="Previous (junior) school" error={errors.previousSchool}>
+                <input id="prevSchool" value={form.previousSchool} onChange={(e) => set("previousSchool", e.target.value)} {...inv("previousSchool")} />
               </Field>
-              <Field id="kjsea" label="KJSEA index number">
-                <input id="kjsea" value={form.kjseaIndexNo} onChange={(e) => set("kjseaIndexNo", e.target.value)} />
+              <Field id="kjsea" label="KJSEA index number" error={errors.kjseaIndexNo}>
+                <input id="kjsea" value={form.kjseaIndexNo} onChange={(e) => set("kjseaIndexNo", e.target.value)} {...inv("kjseaIndexNo")} />
               </Field>
-              <Field id="kjseaPerf" label="KJSEA performance summary">
-                <input id="kjseaPerf" placeholder="e.g. Meeting expectations" value={form.kjseaPerformance} onChange={(e) => set("kjseaPerformance", e.target.value)} />
+              <Field id="kjseaPerf" label="KJSEA performance summary" error={errors.kjseaPerformance}>
+                <input id="kjseaPerf" placeholder="e.g. Meeting expectations" value={form.kjseaPerformance} onChange={(e) => set("kjseaPerformance", e.target.value)} {...inv("kjseaPerformance")} />
               </Field>
             </div>
 
@@ -370,7 +434,7 @@ function RegisterLearner({ onSubmit, role = "HOI", user, onNavigate, onLogout }:
             </fieldset>
           </section>
 
-        
+
           <section className="rl-card">
             <h2>Primary parent / guardian</h2>
             {guardianFields("primaryGuardian", "pg", true)}
@@ -380,7 +444,7 @@ function RegisterLearner({ onSubmit, role = "HOI", user, onNavigate, onLogout }:
             {guardianFields("secondaryGuardian", "sg", false)}
           </section>
 
-       
+
           <section className="rl-card">
             <h2>Health and emergency contact</h2>
             <div className="rl-grid">
@@ -390,14 +454,14 @@ function RegisterLearner({ onSubmit, role = "HOI", user, onNavigate, onLogout }:
               <Field id="emPhone" label="Emergency contact phone *" error={errors.emergencyPhone}>
                 <input id="emPhone" type="tel" value={form.emergencyPhone} onChange={(e) => set("emergencyPhone", e.target.value)} {...inv("emergencyPhone")} />
               </Field>
-              <Field id="medical" label="Medical conditions">
-                <textarea id="medical" rows={3} value={form.medicalConditions} onChange={(e) => set("medicalConditions", e.target.value)} />
+              <Field id="medical" label="Medical conditions" error={errors.medicalConditions}>
+                <textarea id="medical" rows={3} value={form.medicalConditions} onChange={(e) => set("medicalConditions", e.target.value)} {...inv("medicalConditions")} />
               </Field>
-              <Field id="allergies" label="Allergies">
-                <textarea id="allergies" rows={3} value={form.allergies} onChange={(e) => set("allergies", e.target.value)} />
+              <Field id="allergies" label="Allergies" error={errors.allergies}>
+                <textarea id="allergies" rows={3} value={form.allergies} onChange={(e) => set("allergies", e.target.value)} {...inv("allergies")} />
               </Field>
-              <Field id="needs" label="Special needs or learning support">
-                <textarea id="needs" rows={3} value={form.specialNeeds} onChange={(e) => set("specialNeeds", e.target.value)} />
+              <Field id="needs" label="Special needs or learning support" error={errors.specialNeeds}>
+                <textarea id="needs" rows={3} value={form.specialNeeds} onChange={(e) => set("specialNeeds", e.target.value)} {...inv("specialNeeds")} />
               </Field>
             </div>
           </section>
@@ -421,7 +485,14 @@ function RegisterLearner({ onSubmit, role = "HOI", user, onNavigate, onLogout }:
           </section>
 
           <div className="rl-actions">
-            <button type="button" className="rl-btn" onClick={() => { setForm(initialForm); setErrors({}); setDone(null); }}>Clear form</button>
+            <button
+              type="button"
+              className="rl-btn"
+              disabled={saving}
+              onClick={() => { setForm(initialForm); setErrors({}); setFormKey((k) => k + 1); }}
+            >
+              Clear form
+            </button>
             <button type="submit" className="rl-btn rl-primary" disabled={saving}>{saving ? "Saving…" : "Register learner"}</button>
           </div>
         </form>
@@ -429,8 +500,5 @@ function RegisterLearner({ onSubmit, role = "HOI", user, onNavigate, onLogout }:
     </DashboardLayout>
   );
 }
-
-
-
 
 export default RegisterLearner;

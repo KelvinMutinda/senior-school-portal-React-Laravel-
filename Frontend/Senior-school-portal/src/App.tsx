@@ -38,13 +38,17 @@ import Announcements from './Teachers/Annoucements'
 import LoginPage from './auth/Login'
 import AuditLog from './Hoi/AuditLog'
 import Approval from './Hoi/Approval'
+import { Toaster } from './components/Toast'
 
 
 
 function App() {
 
   return (
+    <>
+     <Toaster />
     <Routes>
+     
       <Route path="/Register/Learner" element={<RegisterLearner/>}/>
         <Route path="/Register/Teacher" element={<RegisterTeacher/>}/>
         <Route path="/Hoi/Dashboard" element={<HoiDashboard/>}/>
@@ -88,6 +92,7 @@ function App() {
 
 
     </Routes>
+    </>
   )
 }
 

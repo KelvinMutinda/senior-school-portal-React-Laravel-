@@ -5290,3 +5290,81 @@ em.up { color: var(--green); } em.down { color: var(--red); }
   .fo-body { padding: 14px 14px 16px; }
 }
 @media print { .fo-noprint { display: none !important; } .fo-panel { break-inside: avoid; } }
+/* ---------- Toasts (append to App.css) ---------- */
+
+.ss-toasts {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 9999;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: min(380px, calc(100vw - 32px));
+  pointer-events: none;
+}
+
+.ss-toast {
+  --tc: #2563eb;
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 12px 12px 14px;
+  background: #ffffff;
+  color: #1b2430;
+  border: 1px solid #e3e8ef;
+  border-left: 4px solid var(--tc);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.16);
+  animation: ss-toast-in 0.2s ease-out;
+}
+.ss-toast.is-success { --tc: #15803d; }
+.ss-toast.is-error { --tc: #b91c1c; }
+.ss-toast.is-info { --tc: #2563eb; }
+
+.ss-toast-icon {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  color: #fff;
+  background: var(--tc);
+}
+
+.ss-toast-body { flex: 1; min-width: 0; }
+.ss-toast-body strong { display: block; font-size: 14px; line-height: 1.3; }
+.ss-toast-body p { margin: 2px 0 0; font-size: 13px; line-height: 1.4; color: #475467; }
+
+.ss-toast-close {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #667085;
+  cursor: pointer;
+}
+.ss-toast-close:hover { background: #f2f4f7; color: #1b2430; }
+.ss-toast-close:focus-visible { outline: 2px solid var(--tc); outline-offset: 1px; }
+
+@keyframes ss-toast-in {
+  from { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ss-toast { animation: none; }
+}
+
+@media (prefers-color-scheme: dark) {
+  .ss-toast { background: #1d2530; color: #eef2f6; border-color: #2e3a49; }
+  .ss-toast-body p { color: #aab4c2; }
+  .ss-toast-close { color: #aab4c2; }
+  .ss-toast-close:hover { background: #2a3544; color: #fff; }
+}
