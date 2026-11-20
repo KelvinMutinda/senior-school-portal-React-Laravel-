@@ -4915,3 +4915,51 @@ em.up { color: var(--green); } em.down { color: var(--red); }
   .an-card-head { flex-wrap: wrap; }
   .an-badges { justify-content: flex-start; width: 100%; }
 }
+/* ---------- HOI dashboard: at a glance ---------- */
+.ss-glance { display: grid; gap: 16px; margin-bottom: 24px; }
+
+.ss-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.ss-stat {
+  display: flex; align-items: center; gap: 14px; padding: 18px 20px;
+  text-align: left; cursor: pointer; font: inherit; color: inherit;
+  transition: transform .15s ease, box-shadow .15s ease;
+}
+.ss-stat:hover { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0, 0, 0, .12); }
+.ss-stat-icon {
+  display: grid; place-items: center; width: 48px; height: 48px; border-radius: 12px;
+  background: rgba(201, 162, 39, .16); color: #c9a227; flex-shrink: 0;
+}
+.ss-stat-body { display: flex; flex-direction: column; }
+.ss-stat-body small { opacity: .7; font-size: .8rem; }
+.ss-stat-body b { font-size: 1.9rem; line-height: 1.1; }
+
+.ss-pathway-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+.ss-pathway {
+  padding: 14px; border-radius: 12px;
+  border: 1px solid color-mix(in srgb, currentColor 14%, transparent);
+}
+.ss-pathway-top { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.ss-pathway-top strong { display: block; }
+.ss-pathway-top small { opacity: .65; }
+.ss-pathway-icon {
+  display: grid; place-items: center; width: 36px; height: 36px; border-radius: 10px;
+  background: rgba(201, 162, 39, .16); color: #c9a227;
+}
+.ss-pathway p { margin: 0 0 10px; font-size: .88rem; opacity: .8; }
+.ss-chips { display: flex; flex-wrap: wrap; gap: 6px; list-style: none; margin: 0; padding: 0; }
+.ss-chips li {
+  font-size: .72rem; padding: 3px 9px; border-radius: 999px;
+  background: color-mix(in srgb, currentColor 9%, transparent);
+}
+
+/* Sidebar items without a page yet */
+.ss-link.is-soon { opacity: .5; cursor: not-allowed; }
+.ss-soon {
+  margin-left: auto; font-size: .62rem; font-weight: 600; text-transform: uppercase;
+  letter-spacing: .04em; padding: 2px 6px; border-radius: 999px;
+  background: color-mix(in srgb, currentColor 14%, transparent);
+}
+
+@media (max-width: 900px) {
+  .ss-stats, .ss-pathway-grid { grid-template-columns: 1fr; }
+}

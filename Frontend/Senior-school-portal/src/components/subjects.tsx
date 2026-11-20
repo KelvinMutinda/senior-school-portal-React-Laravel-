@@ -1,18 +1,6 @@
 import { useMemo, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 
-/* Styles live in the shared portal stylesheet (the .rl-page form styles plus
-   the section "Add subject page"). Import that stylesheet once at the app root.
-
-   Who uses this page (from the design document, section 7):
-   - Head of Institution (HOI): creates and activates subjects directly.
-   - Deputy / Director of Studies: creates subjects, which the HOI approves.
-   Teachers can read subjects but not add them. Subjects are archived, never
-   deleted, so past marks and report cards stay intact. */
-
-/* ------------------------------------------------------------------ */
-/* Types                                                               */
-/* ------------------------------------------------------------------ */
 
 export type SubjectStatus = "active" | "pending" | "draft" | "archived";
 export type SubjectKind = "core" | "elective";
@@ -90,9 +78,7 @@ export interface AddSubjectProps {
   pendingApprovals?: number;
 }
 
-/* ------------------------------------------------------------------ */
-/* Sample data. Replace with API data.                                 */
-/* ------------------------------------------------------------------ */
+
 
 const SAMPLE_EXISTING: SubjectRow[] = [
   { id: "s1", name: "Mathematics", code: "MAT", kind: "core", department: "Mathematics", levels: ["Grade 10", "Grade 11", "Grade 12"], teachers: 4, lessonsPerWeek: 5, status: "active" },
@@ -123,9 +109,7 @@ const SAMPLE_LEVELS = ["Grade 10", "Grade 11", "Grade 12"];
 const SAMPLE_STREAMS = ["East", "West", "North", "South"];
 const SAMPLE_TERMS = ["Term 1", "Term 2", "Term 3"];
 
-/* ------------------------------------------------------------------ */
-/* Form state and validation                                           */
-/* ------------------------------------------------------------------ */
+
 
 interface FormState {
   name: string;
@@ -261,9 +245,6 @@ function validate(f: FormState, existing: SubjectRow[], mode: SubmitMode): Error
   return e;
 }
 
-/* ------------------------------------------------------------------ */
-/* Small building blocks                                               */
-/* ------------------------------------------------------------------ */
 
 function Field({
   fid,
@@ -620,9 +601,7 @@ const STATUS_LABEL: Record<SubjectStatus, string> = {
 
 const toggle = (list: string[], v: string) => (list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
 
-/* ------------------------------------------------------------------ */
-/* Page                                                                */
-/* ------------------------------------------------------------------ */
+
 
 export default function AddSubject({
   submitterRole = "hoi",

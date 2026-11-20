@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import HeaderSection, { type Theme, type HeaderAction } from "../components/HeaderSection";
 
 
@@ -18,6 +19,7 @@ export interface MenuItem {
   perm: string;
   icon: IconName;
   badge?: string; // key into the badges map
+  soon?: boolean; // no page exists in App.tsx yet, so the item is shown but disabled
 }
 
 export interface MenuGroup {
@@ -69,55 +71,61 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
   );
 }
 
-/* ---------- 1. Menu and permissions ---------- */
+/* ---------- 1. Menu and permissions ----------
+   Routes match App.tsx. Items marked `soon` have no page in App.tsx yet,
+   so they are shown disabled. Remove `soon` and set the route once the page exists.
+   Finance items point to the HOI pages in Hoi/Finances. */
 
 export const MENU: MenuGroup[] = [
   { group: "Overview", items: [
-    { key: "dashboard", label: "Dashboard", desc: "School overview and alerts", route: "/dashboard", perm: "dashboard.view", icon: "home" },
-    { key: "approvals", label: "Approvals", desc: "Marks, reports, waivers, reversals", route: "/approvals", perm: "approvals.review", icon: "shieldCheck", badge: "approvals" },
+    { key: "dashboard", label: "Dashboard", desc: "School overview", route: "/Hoi/Dashboard", perm: "dashboard.view", icon: "home" },
+    { key: "approvals", label: "Approvals", desc: "Marks, reports, waivers, reversals", route: "", perm: "approvals.review", icon: "shieldCheck", badge: "approvals", soon: true },
   ] },
   { group: "Academics", items: [
-    { key: "academic", label: "Academic Overview", desc: "Class and stream performance", route: "/academics/overview", perm: "academic.overview", icon: "chart" },
-    { key: "classes", label: "My Classes", desc: "Class lists, subjects, timetable", route: "/academics/classes", perm: "classes.view", icon: "users" },
-    { key: "timetable", label: "Classes and Timetable", desc: "Lessons, rooms, teacher assignments", route: "/academics/timetable", perm: "timetable.manage", icon: "calendar" },
-    { key: "students", label: "Students", desc: "Learner directory and profiles", route: "/academics/students", perm: "students.view", icon: "cap" },
-    { key: "students-fee", label: "Students (fee view)", desc: "Name, class, guardian, balance", route: "/finance/students", perm: "students.fee", icon: "cap" },
-    { key: "attendance", label: "Attendance", desc: "Registers, analytics, exceptions", route: "/academics/attendance", perm: "attendance.view", icon: "clipboard" },
-    { key: "marks-entry", label: "Marks Entry", desc: "Enter, upload and submit marks", route: "/academics/marks", perm: "marks.enter", icon: "pen", badge: "marks" },
-    { key: "marks-review", label: "Marks and Report Cards", desc: "Review, approve and publish", route: "/academics/review", perm: "marks.review", icon: "file" },
-    { key: "comments", label: "Report Comments", desc: "Overall comments and conduct", route: "/academics/comments", perm: "report.comment", icon: "book" },
+    { key: "academic", label: "Academic Overview", desc: "Class and stream performance", route: "/Academic/Overview", perm: "academic.overview", icon: "chart" },
+    { key: "classes", label: "My Classes", desc: "Class lists, subjects, timetable", route: "/Academics/classes", perm: "classes.view", icon: "users" },
+    { key: "timetable", label: "Classes and Timetable", desc: "Lessons, rooms, teacher assignments", route: "/Academics/Timetable", perm: "timetable.manage", icon: "calendar" },
+    { key: "students", label: "Students", desc: "Learner directory and profiles", route: "/Students", perm: "students.view", icon: "cap" },
+    { key: "students-fee", label: "Students (fee view)", desc: "Name, class, guardian, balance", route: "", perm: "students.fee", icon: "cap", soon: true },
+    { key: "subjects", label: "Subjects", desc: "Add and manage subjects", route: "/add/Subjects", perm: "subjects.manage", icon: "book" },
+    { key: "attendance", label: "Attendance", desc: "Registers, analytics, exceptions", route: "/Academics/Attendance", perm: "attendance.view", icon: "clipboard" },
+    { key: "marks-entry", label: "Marks Entry", desc: "Enter, upload and submit marks", route: "/Results/Upload/Results", perm: "marks.enter", icon: "pen", badge: "marks" },
+    { key: "marks-review", label: "Marks and Report Cards", desc: "Review, approve and publish", route: "/Results/View/Results", perm: "marks.review", icon: "file" },
+    { key: "comments", label: "Report Comments", desc: "Overall comments and conduct", route: "", perm: "report.comment", icon: "book", soon: true },
   ] },
   { group: "Finance", items: [
-    { key: "fees", label: "Fee Management", desc: "Structures, items, discounts, approval", route: "/finance/fees", perm: "fees.view", icon: "wallet" },
-    { key: "invoices", label: "Invoices", desc: "Generate, view, void", route: "/finance/invoices", perm: "invoices.view", icon: "file" },
-    { key: "payments", label: "Payments and Receipts", desc: "Transactions and receipts", route: "/finance/payments", perm: "payments.view", icon: "receipt" },
-    { key: "overdue", label: "Outstanding and Overdue", desc: "Balances by learner and age", route: "/finance/overdue", perm: "outstanding.view", icon: "alert", badge: "overdue" },
-    { key: "reconcile", label: "Reconciliation", desc: "Statement matching, period lock", route: "/finance/reconciliation", perm: "reconcile.view", icon: "scale" },
-    { key: "queries", label: "Fee Queries", desc: "Tickets from learners and parents", route: "/finance/queries", perm: "feequeries.view", icon: "help", badge: "queries" },
-    { key: "fin-reports", label: "Financial Reports", desc: "Expected vs collected, exports", route: "/finance/reports", perm: "reports.finance", icon: "chart" },
+    { key: "fin-overview", label: "Finance Overview", desc: "School finances at a glance", route: "/Hoi/Finances", perm: "finance.overview", icon: "wallet" },
+    { key: "fees", label: "Fee Management", desc: "Fee structures and items", route: "/Hoi/Finances/Fee", perm: "fees.view", icon: "file" },
+    { key: "invoices", label: "Invoices", desc: "Generate, view, void", route: "", perm: "invoices.view", icon: "file", soon: true },
+    { key: "payments", label: "Payments and Receipts", desc: "Transactions and receipts", route: "/Hoi/Finances/Payments", perm: "payments.view", icon: "receipt" },
+    { key: "overdue", label: "Outstanding and Overdue", desc: "Balances by learner and age", route: "", perm: "outstanding.view", icon: "alert", badge: "overdue", soon: true },
+    { key: "reconcile", label: "Reconciliation", desc: "Statement matching, period lock", route: "", perm: "reconcile.view", icon: "scale", soon: true },
+    { key: "queries", label: "Fee Queries", desc: "Tickets from learners and parents", route: "", perm: "feequeries.view", icon: "help", badge: "queries", soon: true },
+    { key: "fin-reports", label: "Financial Reports", desc: "Expected vs collected, exports", route: "/Finance/Reports", perm: "reports.finance", icon: "chart" },
   ] },
   { group: "AI", items: [
-    { key: "ai-tools", label: "AI Tools", desc: "Material and quiz generators, Q and A", route: "/ai/tools", perm: "ai.tools", icon: "sparkles" },
-    { key: "ai-insights", label: "AI Insights", desc: "Weak topics, usage, engagement", route: "/ai/insights", perm: "ai.insights", icon: "bolt" },
-    { key: "ai-controls", label: "AI Controls", desc: "Enable, restrict or disable features", route: "/ai/controls", perm: "ai.controls", icon: "toggle" },
+    { key: "ai-tools", label: "AI Tools", desc: "Material and quiz generators, Q and A", route: "/AI/Chat", perm: "ai.tools", icon: "sparkles" },
+    { key: "ai-insights", label: "AI Insights", desc: "Weak topics, usage, engagement", route: "/Hoi/AI/Insights", perm: "ai.insights", icon: "bolt" },
+    { key: "ai-controls", label: "AI Controls", desc: "Enable, restrict or disable features", route: "/Hoi/AI/Controls", perm: "ai.controls", icon: "toggle" },
   ] },
   { group: "Communication", items: [
-    { key: "messages", label: "Messages", desc: "Direct messages", route: "/messages", perm: "messages.use", icon: "message", badge: "messages" },
-    { key: "announcements", label: "Announcements", desc: "Notices and publishing", route: "/announcements", perm: "announcements.view", icon: "megaphone" },
+    { key: "messages", label: "Messages", desc: "Direct messages", route: "", perm: "messages.use", icon: "message", badge: "messages", soon: true },
+    { key: "announcements", label: "Announcements", desc: "Notices and publishing", route: "/Announcements", perm: "announcements.view", icon: "megaphone" },
   ] },
   { group: "Administration", items: [
-    { key: "users", label: "User Management", desc: "Onboarding, suspension, role requests", route: "/admin/users", perm: "users.manage", icon: "userCog" },
-    { key: "audit", label: "Audit Log and Settings", desc: "Read-only trail, terms, grading", route: "/admin/audit", perm: "audit.view", icon: "audit" },
+    { key: "register-teacher", label: "Register Teacher", desc: "Onboard a new teacher or staff member", route: "/Register/Teacher", perm: "users.manage", icon: "userCog" },
+    { key: "register-learner", label: "Register Learner", desc: "Admit and register a new learner", route: "/Register/Learner", perm: "users.manage", icon: "user" },
+    { key: "audit", label: "Audit Log and Settings", desc: "Read-only trail, terms, grading", route: "", perm: "audit.view", icon: "audit", soon: true },
   ] },
   { group: "Account", items: [
-    { key: "profile", label: "My Profile", desc: "Details and password", route: "/profile", perm: "profile.view", icon: "user" },
+    { key: "profile", label: "My Profile", desc: "Details and password", route: "", perm: "profile.view", icon: "user", soon: true },
   ] },
 ];
 
 export const ROLE_PERMS: Record<Role, string[]> = {
   HOI: [
-    "dashboard.view", "approvals.review", "academic.overview", "students.view", "attendance.view",
-    "marks.review", "fees.view", "payments.view", "reports.finance", "ai.insights", "ai.controls",
+    "dashboard.view", "approvals.review", "academic.overview", "students.view", "subjects.manage", "attendance.view",
+    "marks.review", "finance.overview", "fees.view", "payments.view", "reports.finance", "ai.insights", "ai.controls",
     "messages.use", "announcements.view", "users.manage", "audit.view", "profile.view",
   ],
   DEPUTY: [
@@ -129,7 +137,7 @@ export const ROLE_PERMS: Record<Role, string[]> = {
     "ai.insights", "messages.use", "announcements.view", "profile.view",
   ],
   FINANCE: [
-    "dashboard.view", "students.fee", "fees.view", "invoices.view", "payments.view", "outstanding.view",
+    "dashboard.view", "students.fee", "finance.overview", "fees.view", "invoices.view", "payments.view", "outstanding.view",
     "reconcile.view", "feequeries.view", "reports.finance", "messages.use", "announcements.view", "profile.view",
   ],
 };
@@ -176,6 +184,15 @@ export function Sidebar({ menu, activeKey, badges, open, onClose, onNavigate, sc
             <div className="ss-group" key={g.group}>
               <p className="ss-group-label">{g.group}</p>
               {g.items.map((item) => {
+                if (item.soon) {
+                  return (
+                    <span key={item.key} className="ss-link is-soon" aria-disabled="true" title="Coming soon">
+                      <Icon name={item.icon} size={17} />
+                      <span>{item.label}</span>
+                      <b className="ss-soon">Soon</b>
+                    </span>
+                  );
+                }
                 const count = item.badge ? badges[item.badge] ?? 0 : 0;
                 const active = item.key === activeKey;
                 return (
@@ -210,7 +227,7 @@ interface LayoutProps {
   title: string;
   children: React.ReactNode;
   isClassTeacher?: boolean; // adds the Report Comments item for teachers
-  activeKey?: string;
+  activeKey?: string; // optional: when omitted it is detected from the current URL
   badges?: Record<string, number>;
   notifications?: number;
   schoolName?: string;
@@ -221,20 +238,43 @@ interface LayoutProps {
 }
 
 export function DashboardLayout({
-  role, user, title, children, isClassTeacher, activeKey = "dashboard", badges = {}, notifications = 0,
+  role, user, title, children, isClassTeacher, activeKey, badges = {}, notifications = 0,
   schoolName = "Stephen Kanja Senior School", motto = "AIM HIGHER", onNavigate, onLogout, headerAction,
 }: LayoutProps) {
   const [theme, setTheme] = useState<Theme>("light");
   const [open, setOpen] = useState(false);
+  const navigate = useNavigate();
+  const location = useLocation();
+
   const menu = useMemo(
     () => buildMenu(role, role === "TEACHER" && isClassTeacher ? ["report.comment"] : []),
     [role, isClassTeacher],
   );
-  const go = (route: string, key: string) => onNavigate?.(route, key);
+
+  // Highlight the sidebar item that matches the current URL (case-insensitive)
+  const currentKey = useMemo(() => {
+    if (activeKey) return activeKey;
+    const path = location.pathname.toLowerCase().replace(/\/+$/, "");
+    const hit = menu
+      .flatMap((g) => g.items)
+      .find((i) => !i.soon && i.route && i.route.toLowerCase() === path);
+    return hit?.key ?? "dashboard";
+  }, [activeKey, location.pathname, menu]);
+
+  const go = (route: string, key: string) => {
+    if (!route) return;
+    if (onNavigate) onNavigate(route, key);
+    else navigate(route);
+  };
+
+  const logout = () => {
+    if (onLogout) onLogout();
+    else navigate("/auth/Login");
+  };
 
   return (
     <div className="ss-shell" data-theme={theme}>
-      <Sidebar menu={menu} activeKey={activeKey} badges={badges} open={open} onClose={() => setOpen(false)}
+      <Sidebar menu={menu} activeKey={currentKey} badges={badges} open={open} onClose={() => setOpen(false)}
         onNavigate={go} schoolName={schoolName} motto={motto} />
       <div className="ss-main">
         <HeaderSection
@@ -245,8 +285,8 @@ export function DashboardLayout({
           onMenuClick={() => setOpen(true)}
           primaryAction={headerAction}
           notifications={notifications}
-          onProfile={() => go("/profile", "profile")}
-          onLogout={onLogout}
+          onProfile={() => {}}
+          onLogout={logout}
         />
         <main className="ss-content">{children}</main>
       </div>
@@ -256,59 +296,53 @@ export function DashboardLayout({
 
 /* ---------- 4. HOI dashboard page ---------- */
 
-interface Approval { id: string; title: string; type: string; from: string; age: string; level: "Final" | "Escalated"; }
-interface AlertItem { id: string; text: string; tone: "danger" | "warn" | "info"; route: string; }
-interface ClassStat { name: string; mean: number; attendance: number; marksSubmitted: number; }
-interface Activity { id: string; text: string; when: string; }
+export interface Pathway {
+  id: string;
+  name: string;
+  icon: IconName;
+  summary: string;
+  tracks: string[];
+  learners?: number; // optional: learners enrolled in this pathway
+}
 
 export interface HoiData {
   learners: number;
-  teachers: number;
+  teachers: number; // teachers and support staff
   classes: number;
-  attendanceToday: number;
-  collectionRate: number;
-  collected: string;
-  expected: string;
-  marksSubmittedPct: number;
-  aiAdoptionPct: number;
-  approvals: Approval[];
-  alerts: AlertItem[];
-  classStats: ClassStat[];
-  activity: Activity[];
+  pathways: Pathway[];
 }
 
 /* Sample data - replace with API results */
 const SAMPLE: HoiData = {
-  learners: 412, teachers: 26, classes: 9,
-  attendanceToday: 94, collectionRate: 78, collected: "KES 6.1M", expected: "KES 7.8M",
-  marksSubmittedPct: 84, aiAdoptionPct: 61,
-  approvals: [
-    { id: "a1", title: "Grade 11 Mathematics, End of Term 3", type: "Marks release", from: "Deputy: J. Mwangi", age: "1 day", level: "Final" },
-    { id: "a2", title: "Term 4 fee structure, Grade 10", type: "Fee structure", from: "Finance Officer", age: "2 days", level: "Final" },
-    { id: "a3", title: "Hardship waiver, Adm. 1042", type: "Waiver", from: "Finance Officer", age: "3 days", level: "Escalated" },
-    { id: "a4", title: "Reverse receipt RC-20931", type: "Payment reversal", from: "Finance Officer", age: "5 hours", level: "Final" },
+  learners: 412,
+  teachers: 26,
+  classes: 9,
+  pathways: [
+    {
+      id: "stem",
+      name: "STEM",
+      icon: "bolt",
+      summary: "Science, technology, engineering and mathematics.",
+      tracks: ["Pure Sciences", "Applied Sciences", "Technical Engineering", "Career and Technology Studies"],
+      learners: 168,
+    },
+    {
+      id: "social",
+      name: "Social Sciences",
+      icon: "book",
+      summary: "Languages, humanities and business studies.",
+      tracks: ["Languages and Literature", "Humanities and Business Studies", "Religious Studies"],
+      learners: 142,
+    },
+    {
+      id: "arts",
+      name: "Arts and Sports Science",
+      icon: "sparkles",
+      summary: "Creative arts, performance and sports.",
+      tracks: ["Music and Dance", "Theatre and Film", "Fine Art", "Sports Science"],
+      learners: 102,
+    },
   ],
-  alerts: [
-    { id: "x1", text: "Grade 12B attendance dropped below 85% this week", tone: "danger", route: "/academics/attendance" },
-    { id: "x2", text: "23 learners have invoices overdue by more than 30 days", tone: "warn", route: "/finance/overdue" },
-    { id: "x3", text: "2 AI outputs were flagged by teachers for review", tone: "info", route: "/ai/controls" },
-  ],
-  classStats: [
-    { name: "Grade 10", mean: 58, attendance: 95, marksSubmitted: 91 },
-    { name: "Grade 11", mean: 61, attendance: 93, marksSubmitted: 82 },
-    { name: "Grade 12", mean: 64, attendance: 92, marksSubmitted: 79 },
-  ],
-  activity: [
-    { id: "r1", text: "Marks for Grade 10 Biology submitted by Ms. Wanjiru", when: "12 min ago" },
-    { id: "r2", text: "Payment of KES 18,500 recorded, receipt RC-20944", when: "40 min ago" },
-    { id: "r3", text: "New teacher account created: Mr. Kiprono", when: "2 hours ago" },
-    { id: "r4", text: "Grade 11 timetable updated by the Deputy", when: "Yesterday" },
-  ],
-};
-
-const greeting = () => {
-  const h = new Date().getHours();
-  return h < 12 ? "Good morning" : h < 17 ? "Good afternoon" : "Good evening";
 };
 
 interface HoiProps {
@@ -316,182 +350,88 @@ interface HoiProps {
   user?: LayoutUser;
   onNavigate?: (route: string, key: string) => void;
   onLogout?: () => void;
-  onPublishAnnouncement?: (audience: string, message: string) => void | Promise<void>;
 }
 
 function HoiDashboard({
   data = SAMPLE,
   user = { name: "Head of Institution", roleLabel: "HOI", avatarUrl: undefined },
-  onNavigate, onLogout, onPublishAnnouncement,
+  onNavigate, onLogout,
 }: HoiProps) {
   const [filter, setFilter] = useState("");
-  const [audience, setAudience] = useState("School-wide");
-  const [message, setMessage] = useState("");
-  const [sent, setSent] = useState(false);
+  const navigate = useNavigate();
   const menu = useMemo(() => buildMenu("HOI"), []);
-  const go = (route: string, key = "") => onNavigate?.(route, key);
 
+  const go = (route: string, key = "") => {
+    if (!route) return;
+    if (onNavigate) onNavigate(route, key);
+    else navigate(route);
+  };
+
+  // Quick navigation: only working pages, skipping Overview and Account
   const quick = menu
     .filter((g) => g.group !== "Overview" && g.group !== "Account")
     .map((g) => ({
       ...g,
-      items: g.items.filter((i) => `${i.label} ${i.desc}`.toLowerCase().includes(filter.toLowerCase())),
+      items: g.items.filter(
+        (i) => !i.soon && `${i.label} ${i.desc}`.toLowerCase().includes(filter.toLowerCase()),
+      ),
     }))
     .filter((g) => g.items.length > 0);
 
-  const publish = async () => {
-    if (!message.trim()) return;
-    await onPublishAnnouncement?.(audience, message.trim());
-    setMessage("");
-    setSent(true);
-    setTimeout(() => setSent(false), 3000);
-  };
+  const stats: { label: string; value: number; icon: IconName; route: string }[] = [
+    { label: "Learners", value: data.learners, icon: "cap", route: "/Students" },
+    { label: "Teachers / Staff", value: data.teachers, icon: "users", route: "/Register/Teacher" },
+    { label: "Classes", value: data.classes, icon: "book", route: "/Academic/Overview" },
+  ];
 
   return (
     <DashboardLayout
       role="HOI"
       user={user}
       title="Head of Institution Dashboard"
-      activeKey="dashboard"
-      notifications={data.approvals.length + data.alerts.length}
-      badges={{ approvals: data.approvals.length, overdue: 23, queries: 5, messages: 3 }}
       onNavigate={onNavigate}
       onLogout={onLogout}
-      headerAction={{ label: "Approvals", icon: "check", onClick: () => go("/approvals", "approvals") }}
+      headerAction={{ label: "Announcements", icon: "megaphone", onClick: () => go("/Announcements", "announcements") }}
     >
-      {/* Hero */}
-      <section className="ss-hero">
-        <div className="ss-hero-text">
-          <span className="ss-eyebrow">Head of Institution</span>
-          <h2>{greeting()}, welcome back</h2>
-          <p>
-            Senior School overview for Grades 10 to 12. You have{" "}
-            <strong>{data.approvals.length} approvals</strong> waiting and{" "}
-            <strong>{data.alerts.length} alerts</strong> that need attention.
-          </p>
-          <div className="ss-hero-btns">
-            <button type="button" className="ss-btn ss-btn-gold" onClick={() => go("/approvals", "approvals")}>Open approvals</button>
-            <button type="button" className="ss-btn ss-btn-ghost" onClick={() => go("/academics/overview", "academic")}>Academic overview</button>
-          </div>
+      {/* School at a glance */}
+      <section className="ss-glance" aria-label="School at a glance">
+        <div className="ss-stats">
+          {stats.map((s) => (
+            <button key={s.label} type="button" className="ss-card ss-stat" onClick={() => go(s.route)}>
+              <span className="ss-stat-icon"><Icon name={s.icon} size={22} /></span>
+              <span className="ss-stat-body">
+                <small>{s.label}</small>
+                <b>{s.value.toLocaleString()}</b>
+              </span>
+            </button>
+          ))}
         </div>
-        <div className="ss-hero-stats">
-          <div><span>Learners</span><b>{data.learners}</b></div>
-          <div><span>Teachers</span><b>{data.teachers}</b></div>
-          <div><span>Classes</span><b>{data.classes}</b></div>
-        </div>
-      </section>
 
-      {/* KPI row */}
-      <section className="ss-kpis" aria-label="Key indicators">
-        <article className="ss-card ss-kpi">
-          <span className="ss-kpi-label"><Icon name="clipboard" size={15} /> Attendance today</span>
-          <b>{data.attendanceToday}%</b>
-          <div className="ss-bar"><i style={{ width: `${data.attendanceToday}%` }} /></div>
-          <small>School-wide, all streams</small>
-        </article>
-        <article className="ss-card ss-kpi">
-          <span className="ss-kpi-label"><Icon name="wallet" size={15} /> Fee collection</span>
-          <b>{data.collectionRate}%</b>
-          <div className="ss-bar"><i className="gold" style={{ width: `${data.collectionRate}%` }} /></div>
-          <small>{data.collected} of {data.expected} expected</small>
-        </article>
-        <article className="ss-card ss-kpi">
-          <span className="ss-kpi-label"><Icon name="pen" size={15} /> Marks submitted</span>
-          <b>{data.marksSubmittedPct}%</b>
-          <div className="ss-bar"><i style={{ width: `${data.marksSubmittedPct}%` }} /></div>
-          <small>Current assessment cycle</small>
-        </article>
-        <article className="ss-card ss-kpi">
-          <span className="ss-kpi-label"><Icon name="sparkles" size={15} /> AI adoption</span>
-          <b>{data.aiAdoptionPct}%</b>
-          <div className="ss-bar"><i className="gold" style={{ width: `${data.aiAdoptionPct}%` }} /></div>
-          <small>Learners and teachers using AI tools</small>
-        </article>
-      </section>
-
-      {/* Approvals + alerts */}
-      <section className="ss-two">
-        <article className="ss-card ss-panel">
+        <article className="ss-card ss-panel ss-pathways">
           <header>
-            <h3>Pending approvals</h3>
-            <button type="button" className="ss-link-btn" onClick={() => go("/approvals", "approvals")}>View all <Icon name="arrow" size={14} /></button>
+            <h3>Pathways offered</h3>
+            <button type="button" className="ss-link-btn" onClick={() => go("/Explore/Pathways")}>
+              Explore pathways <Icon name="arrow" size={14} />
+            </button>
           </header>
-          <ul className="ss-list">
-            {data.approvals.map((a) => (
-              <li key={a.id}>
-                <div>
-                  <strong>{a.title}</strong>
-                  <small>{a.type} · {a.from}</small>
+          <div className="ss-pathway-grid">
+            {data.pathways.map((p) => (
+              <div key={p.id} className="ss-pathway">
+                <div className="ss-pathway-top">
+                  <span className="ss-pathway-icon"><Icon name={p.icon} size={18} /></span>
+                  <div>
+                    <strong>{p.name}</strong>
+                    {p.learners !== undefined && <small>{p.learners} learners</small>}
+                  </div>
                 </div>
-                <span className="ss-age"><Icon name="clock" size={13} /> {a.age}</span>
-                <span className={`ss-tag ${a.level === "Escalated" ? "warn" : ""}`}>{a.level}</span>
-                <button type="button" className="ss-btn ss-btn-sm" onClick={() => go("/approvals", "approvals")}>Review</button>
-              </li>
+                <p>{p.summary}</p>
+                <ul className="ss-chips">
+                  {p.tracks.map((t) => <li key={t}>{t}</li>)}
+                </ul>
+              </div>
             ))}
-          </ul>
+          </div>
         </article>
-
-        <article className="ss-card ss-panel">
-          <header><h3>Critical alerts</h3></header>
-          <ul className="ss-alerts">
-            {data.alerts.map((a) => (
-              <li key={a.id} className={`tone-${a.tone}`}>
-                <Icon name="alert" size={18} />
-                <span>{a.text}</span>
-                <button type="button" className="ss-link-btn" onClick={() => go(a.route)}>Open</button>
-              </li>
-            ))}
-          </ul>
-        </article>
-      </section>
-
-      {/* Performance + activity */}
-      <section className="ss-two">
-        <article className="ss-card ss-panel">
-          <header><h3>Performance by grade</h3></header>
-          <table className="ss-table">
-            <thead>
-              <tr><th>Grade</th><th>Mean score</th><th>Attendance</th><th>Marks submitted</th></tr>
-            </thead>
-            <tbody>
-              {data.classStats.map((c) => (
-                <tr key={c.name}>
-                  <td><strong>{c.name}</strong></td>
-                  <td>{c.mean}%</td>
-                  <td>{c.attendance}%</td>
-                  <td>
-                    <div className="ss-bar sm"><i style={{ width: `${c.marksSubmitted}%` }} /></div>
-                    <small>{c.marksSubmitted}%</small>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </article>
-
-        <article className="ss-card ss-panel">
-          <header><h3>Recent activity</h3></header>
-          <ul className="ss-activity">
-            {data.activity.map((a) => (
-              <li key={a.id}><span className="ss-pip" /><div><p>{a.text}</p><small>{a.when}</small></div></li>
-            ))}
-          </ul>
-        </article>
-      </section>
-
-      {/* Announcement publisher */}
-      <section className="ss-card ss-panel">
-        <header><h3>Publish an announcement</h3></header>
-        <div className="ss-publish">
-          <select value={audience} onChange={(e) => setAudience(e.target.value)} aria-label="Audience">
-            {["School-wide", "Grade 10", "Grade 11", "Grade 12", "Staff only", "Parents only"].map((o) => <option key={o}>{o}</option>)}
-          </select>
-          <textarea rows={3} value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Write the notice..." />
-          <button type="button" className="ss-btn ss-btn-primary" onClick={publish} disabled={!message.trim()}>
-            <Icon name="send" size={15} /> Publish
-          </button>
-        </div>
-        {sent && <p className="ss-sent" role="status">Announcement published to {audience.toLowerCase()}.</p>}
       </section>
 
       {/* Quick navigation */}

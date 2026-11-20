@@ -1,4 +1,3 @@
-
 import './App.css'
 import {Routes,Route} from "react-router-dom"
 import RegisterLearner from './Hoi/RegisterLearner'
@@ -24,6 +23,9 @@ import Pathways from './Student/CareerPathways/Pathways'
 import Profile from './Student/Profile'
 import AcademicOverview from './Hoi/AcademicOverview'
 import FinanceReports from './Hoi/Finances/FinanceReports'
+import HoiFees from './Hoi/Finances/Fee'
+import HoiPayments from './Hoi/Finances/Payments'
+import HoiFinances from './Hoi/Finances'
 import AiInsights from './Hoi/AI/AiInsights'
 import AiControl from './Hoi/AI/AiControl'
 import ProgressRecords from './Teachers/ProgressRecords'
@@ -33,6 +35,7 @@ import Attendance from './Teachers/Attendance'
 import Timetables from './Teachers/Timetable'
 import UploadLearningMaterial from './Teachers/LearningMaterials/UploadLearningMaterial'
 import Announcements from './Teachers/Annoucements'
+import LoginPage from './auth/Login'
 
 
 
@@ -59,6 +62,9 @@ function App() {
         <Route path="/Finance/Fee/Structure" element={<FeeStructure/>}/>
         <Route path="/Finance/Fee/statement" element={<FeeStatements/>}/>
         <Route path="/Finance/Reports" element={<FinanceReports/>}/>
+        <Route path="/Hoi/Finances" element={<HoiFinances/>}/>
+        <Route path="/Hoi/Finances/Fee" element={<HoiFees/>}/>
+        <Route path="/Hoi/Finances/Payments" element={<HoiPayments/>}/>
         <Route path="/CareerPathways" element={<PathwayRecommender/>}/>
         <Route path="/Explore/Pathways" element={<Pathways/>}/>
         <Route path="/AI/Chat" element={<AiTutorPage/>}/>
@@ -74,6 +80,7 @@ function App() {
         <Route path="/Academics/Timetable" element={<Timetables/>}/>
         <Route path="/Teacher/materials" element={<GetLearningMaterial/>}/>
         <Route path="/Announcements" element={<Announcements/>}/>
+        <Route path="/" element={<LoginPage/>}/>
 
 
     </Routes>

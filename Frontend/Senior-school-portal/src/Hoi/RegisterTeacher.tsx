@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { DashboardLayout } from "./HoiDashboard";
 
 
 
@@ -219,155 +220,161 @@ function RegisterTeacher({ onSubmit }: Props) {
   );
 
   return (
-    <div className="rl-page">
-      <header className="rl-head">
-        <h1>Register teacher</h1>
-        <p>Add a new teacher to the Senior School Portal. Fields marked * are required.</p>
-      </header>
+    <DashboardLayout
+      role="HOI"
+      user={{ name: "Head of Institution", roleLabel: "HOI" }}
+      title="Register Teacher"
+    >
+      <div className="rl-page">
+        <header className="rl-head">
+          <h1>Register teacher</h1>
+          <p>Add a new teacher to the Senior School Portal. Fields marked * are required.</p>
+        </header>
 
-      {done && <div className="rl-ok" role="status">{done}</div>}
+        {done && <div className="rl-ok" role="status">{done}</div>}
 
-      <form onSubmit={handleSubmit} noValidate>
-        {/* 1. Personal */}
-        <section className="rl-card">
-          <h2>Personal details</h2>
-          <div className="rl-photo">
-            <div className="rl-avatar">{photoUrl ? <img src={photoUrl} alt="Selected teacher" /> : <span>No photo</span>}</div>
-            <div>
-              <label htmlFor="photo" className="rl-btn">Upload photo</label>
-              <input id="photo" type="file" accept="image/*" hidden onChange={(e) => set("photo", e.target.files?.[0] ?? null)} />
-              <small>JPG or PNG, passport style.</small>
+        <form onSubmit={handleSubmit} noValidate>
+          {/* 1. Personal */}
+          <section className="rl-card">
+            <h2>Personal details</h2>
+            <div className="rl-photo">
+              <div className="rl-avatar">{photoUrl ? <img src={photoUrl} alt="Selected teacher" /> : <span>No photo</span>}</div>
+              <div>
+                <label htmlFor="photo" className="rl-btn">Upload photo</label>
+                <input id="photo" type="file" accept="image/*" hidden onChange={(e) => set("photo", e.target.files?.[0] ?? null)} />
+                <small>JPG or PNG, passport style.</small>
+              </div>
             </div>
-          </div>
-          <div className="rl-grid">
-            {text("firstName", "First name", { req: true })}
-            {text("middleName", "Middle name")}
-            {text("surname", "Surname", { req: true })}
-            {select("gender", "Gender", ["Female", "Male"], true)}
-            {text("dateOfBirth", "Date of birth", { type: "date", req: true })}
-            {text("nationalId", "National ID number", { req: true })}
-            {text("nationality", "Nationality")}
-            {select("maritalStatus", "Marital status", MARITAL)}
-            {text("phone", "Phone", { type: "tel", placeholder: "0712 345 678", req: true })}
-            {text("altPhone", "Alternative phone", { type: "tel" })}
-            {text("email", "Email", { type: "email", req: true, hint: "Used for portal login details" })}
-            {text("address", "Home address / county")}
-          </div>
-        </section>
-
-        {/* 2. Employment */}
-        <section className="rl-card">
-          <h2>Employment details</h2>
-          <div className="rl-grid">
-            {text("staffNo", "Staff number", { req: true })}
-            {select("employmentType", "Employment type", EMPLOYMENT_TYPES, true)}
-            {text("tscNo", isTsc ? "TSC number" : "TSC number (if any)", { req: isTsc })}
-            {text("dateOfEmployment", "Date of employment", { type: "date", req: true })}
-            {text("designation", "Designation", { req: true, placeholder: "e.g. Senior Teacher" })}
-            {text("jobGroup", "Job group")}
-            {select("department", "Department", DEPARTMENTS, true)}
-            {text("kraPin", "KRA PIN")}
-            {text("nssfNo", "NSSF number")}
-            {text("shaNo", "SHA number")}
-          </div>
-        </section>
-
-        {/* 3. Qualifications */}
-        <section className="rl-card">
-          <h2>Qualifications</h2>
-          <div className="rl-grid">
-            {select("highestQualification", "Highest qualification", QUALIFICATIONS, true)}
-            {text("institution", "Institution", { req: true })}
-            {text("graduationYear", "Year of graduation", { placeholder: "e.g. 2018" })}
-            {text("specialization", "Area of specialization", { req: true, placeholder: "e.g. Mathematics and Physics" })}
-          </div>
-          <div className="rl-photo" style={{ marginTop: 20, marginBottom: 0 }}>
-            <div>
-              <label htmlFor="certs" className="rl-btn">Upload certificates</label>
-              <input id="certs" type="file" accept=".pdf,image/*" multiple hidden onChange={(e) => set("certificates", Array.from(e.target.files ?? []))} />
-              <small>
-                {form.certificates.length
-                  ? `${form.certificates.length} file${form.certificates.length > 1 ? "s" : ""} selected: ${form.certificates.map((f) => f.name).join(", ")}`
-                  : "PDF or image copies of academic and professional certificates."}
-              </small>
+            <div className="rl-grid">
+              {text("firstName", "First name", { req: true })}
+              {text("middleName", "Middle name")}
+              {text("surname", "Surname", { req: true })}
+              {select("gender", "Gender", ["Female", "Male"], true)}
+              {text("dateOfBirth", "Date of birth", { type: "date", req: true })}
+              {text("nationalId", "National ID number", { req: true })}
+              {text("nationality", "Nationality")}
+              {select("maritalStatus", "Marital status", MARITAL)}
+              {text("phone", "Phone", { type: "tel", placeholder: "0712 345 678", req: true })}
+              {text("altPhone", "Alternative phone", { type: "tel" })}
+              {text("email", "Email", { type: "email", req: true, hint: "Used for portal login details" })}
+              {text("address", "Home address / county")}
             </div>
-          </div>
-        </section>
+          </section>
 
-        {/* 4. Teaching assignment */}
-        <section className="rl-card">
-          <h2>Teaching assignment</h2>
-
-          <fieldset className="rl-subjects" style={{ marginTop: 0 }} {...(errors.teachingSubjects ? { "data-invalid": "true", tabIndex: -1 } : {})}>
-            <legend>Subjects taught *</legend>
-            <div className="rl-checks">
-              {SUBJECTS.map((s) => (
-                <label key={s} className="rl-check">
-                  <input type="checkbox" checked={form.teachingSubjects.includes(s)} onChange={() => toggle("teachingSubjects", s)} />
-                  {s}
-                </label>
-              ))}
+          {/* 2. Employment */}
+          <section className="rl-card">
+            <h2>Employment details</h2>
+            <div className="rl-grid">
+              {text("staffNo", "Staff number", { req: true })}
+              {select("employmentType", "Employment type", EMPLOYMENT_TYPES, true)}
+              {text("tscNo", isTsc ? "TSC number" : "TSC number (if any)", { req: isTsc })}
+              {text("dateOfEmployment", "Date of employment", { type: "date", req: true })}
+              {text("designation", "Designation", { req: true, placeholder: "e.g. Senior Teacher" })}
+              {text("jobGroup", "Job group")}
+              {select("department", "Department", DEPARTMENTS, true)}
+              {text("kraPin", "KRA PIN")}
+              {text("nssfNo", "NSSF number")}
+              {text("shaNo", "SHA number")}
             </div>
-            {errors.teachingSubjects && <small className="rl-err" role="alert">{errors.teachingSubjects}</small>}
-          </fieldset>
+          </section>
 
-          <fieldset className="rl-subjects" {...(errors.grades ? { "data-invalid": "true", tabIndex: -1 } : {})}>
-            <legend>Grades taught *</legend>
-            <div className="rl-checks">
-              {GRADES.map((g) => (
-                <label key={g} className="rl-check">
-                  <input type="checkbox" checked={form.grades.includes(g)} onChange={() => toggle("grades", g)} />
-                  Grade {g}
-                </label>
-              ))}
+          {/* 3. Qualifications */}
+          <section className="rl-card">
+            <h2>Qualifications</h2>
+            <div className="rl-grid">
+              {select("highestQualification", "Highest qualification", QUALIFICATIONS, true)}
+              {text("institution", "Institution", { req: true })}
+              {text("graduationYear", "Year of graduation", { placeholder: "e.g. 2018" })}
+              {text("specialization", "Area of specialization", { req: true, placeholder: "e.g. Mathematics and Physics" })}
             </div>
-            {errors.grades && <small className="rl-err" role="alert">{errors.grades}</small>}
-          </fieldset>
+            <div className="rl-photo" style={{ marginTop: 20, marginBottom: 0 }}>
+              <div>
+                <label htmlFor="certs" className="rl-btn">Upload certificates</label>
+                <input id="certs" type="file" accept=".pdf,image/*" multiple hidden onChange={(e) => set("certificates", Array.from(e.target.files ?? []))} />
+                <small>
+                  {form.certificates.length
+                    ? `${form.certificates.length} file${form.certificates.length > 1 ? "s" : ""} selected: ${form.certificates.map((f) => f.name).join(", ")}`
+                    : "PDF or image copies of academic and professional certificates."}
+                </small>
+              </div>
+            </div>
+          </section>
 
-          <div className="rl-grid" style={{ marginTop: 20 }}>
-            <Field id="classTeacherOf" label="Class teacher of" hint="Leave blank if not a class teacher">
-              <select id="classTeacherOf" value={form.classTeacherOf} onChange={(e) => set("classTeacherOf", e.target.value)}>
-                <option value="">None</option>
-                {GRADES.flatMap((g) => STREAMS.map((s) => <option key={`${g}${s}`} value={`${g}${s}`}>Grade {g}{s}</option>))}
-              </select>
-            </Field>
+          {/* 4. Teaching assignment */}
+          <section className="rl-card">
+            <h2>Teaching assignment</h2>
+
+            <fieldset className="rl-subjects" style={{ marginTop: 0 }} {...(errors.teachingSubjects ? { "data-invalid": "true", tabIndex: -1 } : {})}>
+              <legend>Subjects taught *</legend>
+              <div className="rl-checks">
+                {SUBJECTS.map((s) => (
+                  <label key={s} className="rl-check">
+                    <input type="checkbox" checked={form.teachingSubjects.includes(s)} onChange={() => toggle("teachingSubjects", s)} />
+                    {s}
+                  </label>
+                ))}
+              </div>
+              {errors.teachingSubjects && <small className="rl-err" role="alert">{errors.teachingSubjects}</small>}
+            </fieldset>
+
+            <fieldset className="rl-subjects" {...(errors.grades ? { "data-invalid": "true", tabIndex: -1 } : {})}>
+              <legend>Grades taught *</legend>
+              <div className="rl-checks">
+                {GRADES.map((g) => (
+                  <label key={g} className="rl-check">
+                    <input type="checkbox" checked={form.grades.includes(g)} onChange={() => toggle("grades", g)} />
+                    Grade {g}
+                  </label>
+                ))}
+              </div>
+              {errors.grades && <small className="rl-err" role="alert">{errors.grades}</small>}
+            </fieldset>
+
+            <div className="rl-grid" style={{ marginTop: 20 }}>
+              <Field id="classTeacherOf" label="Class teacher of" hint="Leave blank if not a class teacher">
+                <select id="classTeacherOf" value={form.classTeacherOf} onChange={(e) => set("classTeacherOf", e.target.value)}>
+                  <option value="">None</option>
+                  {GRADES.flatMap((g) => STREAMS.map((s) => <option key={`${g}${s}`} value={`${g}${s}`}>Grade {g}{s}</option>))}
+                </select>
+              </Field>
+            </div>
+            <label className="rl-check" style={{ marginTop: 12 }}>
+              <input type="checkbox" checked={form.isHod} onChange={(e) => set("isHod", e.target.checked)} />
+              This teacher is a head of department
+            </label>
+          </section>
+
+          {/* 5. Next of kin */}
+          <section className="rl-card">
+            <h2>Next of kin</h2>
+            <div className="rl-grid">
+              {text("kinName", "Full name", { req: true })}
+              {select("kinRelationship", "Relationship", RELATIONSHIPS)}
+              {text("kinPhone", "Phone", { type: "tel", req: true })}
+            </div>
+          </section>
+
+          {/* 6. Portal access & consent */}
+          <section className="rl-card">
+            <h2>Portal access and consent</h2>
+            <label className="rl-check">
+              <input type="checkbox" checked={form.sendLogin} onChange={(e) => set("sendLogin", e.target.checked)} />
+              Create a Teacher account and email the login details to the address above.
+            </label>
+            <label className="rl-check">
+              <input type="checkbox" checked={form.consentDataUse} onChange={(e) => set("consentDataUse", e.target.checked)} {...inv("consentDataUse")} />
+              The teacher agrees that the school may collect and use this information for staff administration. *
+            </label>
+            {errors.consentDataUse && <small className="rl-err" role="alert">{errors.consentDataUse}</small>}
+          </section>
+
+          <div className="rl-actions">
+            <button type="button" className="rl-btn" onClick={() => { setForm(initialForm); setErrors({}); setDone(null); }}>Clear form</button>
+            <button type="submit" className="rl-btn rl-primary" disabled={saving}>{saving ? "Saving…" : "Register teacher"}</button>
           </div>
-          <label className="rl-check" style={{ marginTop: 12 }}>
-            <input type="checkbox" checked={form.isHod} onChange={(e) => set("isHod", e.target.checked)} />
-            This teacher is a head of department
-          </label>
-        </section>
-
-        {/* 5. Next of kin */}
-        <section className="rl-card">
-          <h2>Next of kin</h2>
-          <div className="rl-grid">
-            {text("kinName", "Full name", { req: true })}
-            {select("kinRelationship", "Relationship", RELATIONSHIPS)}
-            {text("kinPhone", "Phone", { type: "tel", req: true })}
-          </div>
-        </section>
-
-        {/* 6. Portal access & consent */}
-        <section className="rl-card">
-          <h2>Portal access and consent</h2>
-          <label className="rl-check">
-            <input type="checkbox" checked={form.sendLogin} onChange={(e) => set("sendLogin", e.target.checked)} />
-            Create a Teacher account and email the login details to the address above.
-          </label>
-          <label className="rl-check">
-            <input type="checkbox" checked={form.consentDataUse} onChange={(e) => set("consentDataUse", e.target.checked)} {...inv("consentDataUse")} />
-            The teacher agrees that the school may collect and use this information for staff administration. *
-          </label>
-          {errors.consentDataUse && <small className="rl-err" role="alert">{errors.consentDataUse}</small>}
-        </section>
-
-        <div className="rl-actions">
-          <button type="button" className="rl-btn" onClick={() => { setForm(initialForm); setErrors({}); setDone(null); }}>Clear form</button>
-          <button type="submit" className="rl-btn rl-primary" disabled={saving}>{saving ? "Saving…" : "Register teacher"}</button>
-        </div>
-      </form>
-    </div>
+        </form>
+      </div>
+    </DashboardLayout>
   );
 }
 
