@@ -1,11 +1,16 @@
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
+import { useNavigate } from "react-router-dom";
+import { ApiError, login, saveSession } from "../api/authApi";
+import { toast } from "../components/Toast";
 
 /* ==========================================================================
    LoginPage
    Styles live in App.css (section "Login page"). Every class starts with lg-.
-   The page does not store anything in the browser. Your onSubmit decides what
-   happens after sign-in (token, redirect, and so on).
+
+   Signs in by itself: calls the Laravel API (src/api/authApi.ts), saves the
+   token, shows the result with toast, and goes to the redirect the backend
+   sends for the person's role (or to the change-password page).
    ========================================================================== */
 
 /* ------------------------------------------------------------------ */
@@ -40,12 +45,6 @@ export interface LoginPageProps {
   /** Shown above the form, for example "Your session ended. Please sign in again." */
   notice?: string;
   helpText?: string;
-  /**
-   * Called with the details when the form is valid. Throw an Error with a
-   * short message to show it to the person, for example
-   * throw new Error("Those details did not match. Check them and try again.").
-   */
-  onSubmit?: (credentials: LoginCredentials) => void | Promise<void>;
   onForgotPassword?: () => void;
 }
 
@@ -65,8 +64,6 @@ const DEFAULT_ROLES: LoginRoleOption[] = [
     hint: "For teachers, office and management staff.",
   },
 ];
-
-const GENERIC_ERROR = "We could not sign you in. Check your details and try again.";
 
 function initialsOf(name: string) {
   const letters = name
@@ -163,9 +160,9 @@ export default function LoginPage({
   initialRole,
   notice,
   helpText = "Need help signing in? Contact the school office.",
-  onSubmit,
   onForgotPassword,
 }: LoginPageProps) {
+  const navigate = useNavigate();
   const uid = useId();
   const ids = {
     identifier: `${uid}-identifier`,
@@ -182,23 +179,16 @@ export default function LoginPage({
   const [showPassword, setShowPassword] = useState(false);
   const [capsOn, setCapsOn] = useState(false);
   const [errors, setErrors] = useState<{ identifier?: string; password?: string }>({});
-  const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   const identifierRef = useRef<HTMLInputElement>(null);
   const passwordRef = useRef<HTMLInputElement>(null);
-  const alertRef = useRef<HTMLDivElement>(null);
 
   const option = roles.find((r) => r.key === role) ?? roles[0] ?? DEFAULT_ROLES[0];
-
-  useEffect(() => {
-    if (error) alertRef.current?.focus();
-  }, [error]);
 
   const chooseRole = (key: LoginRole) => {
     setRole(key);
     setErrors({});
-    setError(null);
   };
 
   const trackCaps = (e: KeyboardEvent<HTMLInputElement>) => {
@@ -209,11 +199,11 @@ export default function LoginPage({
     e.preventDefault();
     if (loading) return;
 
+    // Quick checks in the browser first, shown under the fields.
     const next: { identifier?: string; password?: string } = {};
     if (!identifier.trim()) next.identifier = `Enter your ${option.idLabel.toLowerCase()}.`;
     if (!password) next.password = "Enter your password.";
     setErrors(next);
-    setError(null);
 
     if (next.identifier) {
       identifierRef.current?.focus();
@@ -226,10 +216,30 @@ export default function LoginPage({
 
     setLoading(true);
     try {
-      await onSubmit?.({ role, identifier: identifier.trim(), password, remember });
+      const credentials: LoginCredentials = { role, identifier: identifier.trim(), password, remember };
+      const result = await login(credentials);
+      saveSession(result, remember);
+
+      const firstName = result.user.name.split(" ")[0];
+      toast.success(
+        "Signed in",
+        result.user.must_change_password
+          ? "Please set a new password to continue."
+          : `Welcome back, ${firstName}.`,
+      );
+      navigate(result.redirect, { replace: true });
     } catch (err) {
-      setError(err instanceof Error && err.message ? err.message : GENERIC_ERROR);
+      if (err instanceof ApiError && err.status === 429) {
+        toast.error("Too many attempts", err.message);
+      } else if (err instanceof ApiError && err.status >= 500) {
+        toast.error("Something went wrong", "The server could not sign you in. Try again, and tell the school office if it keeps happening.");
+      } else if (err instanceof ApiError) {
+        toast.error("Could not sign you in", err.message);
+      } else {
+        toast.error("Cannot reach the server", "Check your connection and that the backend is running, then try again.");
+      }
       setPassword("");
+      requestAnimationFrame(() => passwordRef.current?.focus());
     } finally {
       setLoading(false);
     }
@@ -282,12 +292,6 @@ export default function LoginPage({
             <p className="lg-notice" role="status">
               {notice}
             </p>
-          ) : null}
-
-          {error ? (
-            <div className="lg-error" role="alert" tabIndex={-1} ref={alertRef}>
-              {error}
-            </div>
           ) : null}
 
           <form noValidate onSubmit={submit}>

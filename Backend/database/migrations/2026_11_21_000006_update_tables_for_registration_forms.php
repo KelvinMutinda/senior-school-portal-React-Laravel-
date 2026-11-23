@@ -4,14 +4,6 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 
-/*
- * Changes driven by RegisterLearner.tsx and RegisterTeacher.tsx.
- * Run after migrations 1 to 5.
- *
- * Sensitive columns (national ID, KRA PIN, NSSF, SHA, medical notes) are `text`
- * so you can use Eloquent's `encrypted` cast. Encrypted values cannot be searched
- * or made unique, so keep uniqueness checks on staff_no / tsc_number / admission_no.
- */
 return new class extends Migration
 {
     public function up(): void

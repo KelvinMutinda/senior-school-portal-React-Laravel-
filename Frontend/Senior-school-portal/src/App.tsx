@@ -35,7 +35,6 @@ import Attendance from './Teachers/Attendance'
 import Timetables from './Teachers/Timetable'
 import UploadLearningMaterial from './Teachers/LearningMaterials/UploadLearningMaterial'
 import Announcements from './Teachers/Annoucements'
-import LoginPage from './auth/Login'
 import AuditLog from './Hoi/AuditLog'
 import Approval from './Hoi/Approval'
 import { Toaster } from './components/Toast'
@@ -77,7 +76,7 @@ function App() {
         <Route path="/Students" element={<Students/>}/>
         <Route path="Hoi/AI/Insights" element={<AiInsights/>}/>
         <Route path="Hoi/AI/Controls" element={<AiControl/>}/>
-        <Route path="/Learner/Profile"element={<Profile/>}/>
+        <Route path="/Learner/Profile" element={<Profile/>}/>
         <Route path="/Upload/LearningMaterial" element={<UploadLearningMaterial/>}/>
         <Route path="/Academic/LearningMaterials" element={<GetLearningMaterial/>}/>
         <Route path="/Generate/LearningMaterial" element={<AiTutorPage/>}/>
@@ -86,7 +85,7 @@ function App() {
         <Route path="/Academics/Timetable" element={<Timetables/>}/>
         <Route path="/Teacher/materials" element={<GetLearningMaterial/>}/>
         <Route path="/Announcements" element={<Announcements/>}/>
-        <Route path="/" element={<LoginPage/>}/>
+        <Route path="/" element={<Login/>}/>
         <Route path="/Hoi/Approvals" element={<Approval/>}/>
         <Route path="/Hoi/Audit" element={<AuditLog/>}/>
 

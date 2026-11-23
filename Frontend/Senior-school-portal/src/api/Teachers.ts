@@ -1,6 +1,6 @@
-import type { TeacherForm } from "../Hoi/RegisterTeacher"; // ADJUST path
+import type { TeacherForm } from "../Hoi/RegisterTeacher"; 
 
-const API_URL: string = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api"; // ADJUST if not Vite
+const API_URL: string = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api"; 
 
 export interface RegisterTeacherResult {
   message: string;
@@ -47,14 +47,14 @@ function buildFormData(form: TeacherForm): FormData {
 }
 
 export async function registerTeacher(form: TeacherForm): Promise<RegisterTeacherResult> {
-  const token = localStorage.getItem("token"); // ADJUST to wherever your login stores the Sanctum token
+  const token = localStorage.getItem("token"); 
 
   const res = await fetch(`${API_URL}/teachers`, {
     method: "POST",
     headers: {
-      Accept: "application/json", // makes Laravel return JSON errors instead of redirects
+      Accept: "application/json", 
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      // No Content-Type: the browser sets the multipart boundary itself.
+     
     },
     body: buildFormData(form),
   });
@@ -64,7 +64,7 @@ export async function registerTeacher(form: TeacherForm): Promise<RegisterTeache
   if (res.status === 422) {
     const errors: Record<string, string> = {};
     Object.entries((body.errors ?? {}) as Record<string, string[]>).forEach(([field, msgs]) => {
-      // "teaching_subjects.0" -> "teachingSubjects"
+   
       const key = toCamel(field.replace(/\.\d+$/, ""));
       if (!errors[key]) errors[key] = msgs[0];
     });
