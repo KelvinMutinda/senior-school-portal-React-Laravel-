@@ -2,8 +2,8 @@ import type { LoginCredentials } from "../auth/Login";
 
 /* ==========================================================================
    authApi
-   Talks to the Laravel backend (POST /api/login, POST /api/logout) and keeps
-   the sign-in token.
+   Talks to the Laravel backend (POST /api/login, /api/logout,
+   /api/change-password) and keeps the sign-in token.
 
    "Keep me signed in" ticked  -> token kept in localStorage (survives closing the browser)
    "Keep me signed in" empty   -> token kept in sessionStorage (gone when the tab closes)
@@ -106,6 +106,51 @@ export async function logout(): Promise<void> {
   } catch {
     /* the token will simply expire on the server */
   }
+}
+
+/* ------------------------------------------------------------------ */
+/* Change password                                                     */
+/* ------------------------------------------------------------------ */
+
+/**
+ * POST /api/change-password. The backend replaces the token and clears
+ * must_change_password, so on success this saves the new session itself,
+ * in the same storage the old one used (so "Keep me signed in" is respected).
+ * Returns the result; navigate to result.redirect afterwards.
+ */
+export async function changePassword(input: {
+  current_password: string;
+  password: string;
+  password_confirmation: string;
+}): Promise<LoginResult> {
+  const token = getToken();
+  if (!token) throw new ApiError("Your session has ended. Please sign in again.", 401);
+
+  // Remember where the old session lived before it gets replaced.
+  let remember = false;
+  try {
+    remember = localStorage.getItem(TOKEN_KEY) !== null;
+  } catch {
+    /* ignore */
+  }
+
+  const res = await fetch(apiUrl("/change-password"), {
+    method: "POST",
+    headers: { ...authHeaders(), "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+
+  const body = (await res.json().catch(() => null)) as (ErrorBody & Partial<LoginResult>) | null;
+
+  if (!res.ok) {
+    throw new ApiError(firstMessage(body) ?? "Could not change the password.", res.status, body?.errors ?? {});
+  }
+  if (!body?.token || !body.user || !body.redirect) {
+    throw new ApiError("Could not change the password.", 500);
+  }
+
+  saveSession(body as LoginResult, remember);
+  return body as LoginResult;
 }
 
 /* ------------------------------------------------------------------ */

@@ -38,6 +38,8 @@ import Announcements from './Teachers/Annoucements'
 import AuditLog from './Hoi/AuditLog'
 import Approval from './Hoi/Approval'
 import { Toaster } from './components/Toast'
+import LearnerDashboardLoader from "./Student/LearnerDashboardLoader";
+import ChangePasswordPage from './auth/ChangePasswordPage'
 
 
 
@@ -47,6 +49,7 @@ function App() {
     <>
      <Toaster />
     <Routes>
+ 
      
       <Route path="/Register/Learner" element={<RegisterLearner/>}/>
         <Route path="/Register/Teacher" element={<RegisterTeacher/>}/>
@@ -74,8 +77,8 @@ function App() {
         <Route path="/Explore/Pathways" element={<Pathways/>}/>
         <Route path="/AI/Chat" element={<AiTutorPage/>}/>
         <Route path="/Students" element={<Students/>}/>
-        <Route path="Hoi/AI/Insights" element={<AiInsights/>}/>
-        <Route path="Hoi/AI/Controls" element={<AiControl/>}/>
+        <Route path="/Hoi/AI/Insights" element={<AiInsights/>}/>
+        <Route path="/Hoi/AI/Controls" element={<AiControl/>}/>
         <Route path="/Learner/Profile" element={<Profile/>}/>
         <Route path="/Upload/LearningMaterial" element={<UploadLearningMaterial/>}/>
         <Route path="/Academic/LearningMaterials" element={<GetLearningMaterial/>}/>
@@ -87,7 +90,7 @@ function App() {
         <Route path="/Announcements" element={<Announcements/>}/>
         <Route path="/" element={<Login/>}/>
         <Route path="/Hoi/Approvals" element={<Approval/>}/>
-        <Route path="/Hoi/Audit" element={<AuditLog/>}/>
+        <Route path="auth/ChangePassword" element={<ChangePasswordPage/>}/>
 
 
     </Routes>

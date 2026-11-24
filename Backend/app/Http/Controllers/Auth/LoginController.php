@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
+use App\Http\Requests\Auth\ChangePasswordRequest;
 
 class LoginController extends Controller
 {
@@ -72,6 +73,46 @@ class LoginController extends Controller
             'redirect'   => $user->redirectPath(),
         ]);
     }
+    /**
+ * POST /api/change-password (needs the Bearer token)
+ * Body: { current_password, password, password_confirmation }
+ * Returns the same shape as login, so React can save the new session as-is.
+ */
+public function changePassword(ChangePasswordRequest $request): JsonResponse
+{
+    $user = $request->user();
+
+    if (! Hash::check($request->input('current_password'), $user->password)) {
+        throw ValidationException::withMessages([
+            'current_password' => 'Your current password is not correct.',
+        ]);
+    }
+
+    // Never allow the shared default password to be kept.
+    $default = config('portal.default_passwords.' . strtolower($user->role));
+    if ($default && hash_equals((string) $default, (string) $request->input('password'))) {
+        throw ValidationException::withMessages([
+            'password' => 'Choose a password different from the default one.',
+        ]);
+    }
+
+    $user->password = $request->input('password'); // hashed by the cast
+    $user->forceFill(['must_change_password' => false])->save();
+
+    // Replace every token (this one included) with a fresh one, same expiry.
+    $expiresAt = $request->user()->currentAccessToken()->expires_at ?? now()->addHours(config('portal.token.hours'));
+    $user->tokens()->delete();
+    $token = $user->createToken('portal', [$user->role], $expiresAt);
+
+    return response()->json([
+        'message'    => 'Password changed.',
+        'token'      => $token->plainTextToken,
+        'token_type' => 'Bearer',
+        'expires_at' => $expiresAt->toIso8601String(),
+        'user'       => $user->portalProfile(),
+        'redirect'   => $user->redirectPath(), // now the role dashboard, e.g. /Learner/Dashboard
+    ]);
+}
 
     /**
      * POST /api/logout (needs the Bearer token)

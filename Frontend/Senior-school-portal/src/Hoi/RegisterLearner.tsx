@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import * as XLSX from "xlsx";
 import { DashboardLayout, type LayoutUser, type Role } from "../Hoi/HoiDashboard";
 import { registerLearner, ApiError } from "../api/Learner";
 import { toast } from "../components/Toast";
@@ -64,9 +65,11 @@ export type SubmitResult =
   | { message?: string; learner?: { id: number; admission_no: string; name: string } }
   | void;
 
+type SubmitFn = (data: LearnerForm) => SubmitResult | Promise<SubmitResult>;
+
 interface Props {
   /** Defaults to the Laravel API call in src/api/learners.ts. */
-  onSubmit?: (data: LearnerForm) => SubmitResult | Promise<SubmitResult>;
+  onSubmit?: SubmitFn;
   role?: Role; // who is registering the learner (sidebar follows this role)
   user?: LayoutUser;
   onNavigate?: (route: string, key: string) => void;
@@ -126,6 +129,10 @@ const ELECTIVES: Record<Exclude<Pathway, "">, string[]> = {
   "Arts & Sports": ["Music", "Fine Art", "Theatre & Film", "Sports Science"],
 };
 
+const GENDERS = ["Female", "Male"];
+const PATHWAYS = ["STEM", "Social Sciences", "Arts & Sports"];
+const RESIDENCES = ["Day", "Boarding"];
+const GRADES = ["10", "11", "12"];
 const RELATIONSHIPS = ["Mother", "Father", "Guardian", "Sibling", "Grandparent", "Uncle / Aunt", "Other"];
 const STREAMS = ["A", "B", "C", "D", "E", "F"];
 const ROLE_LABEL: Record<Role, string> = {
@@ -156,6 +163,518 @@ function mapServerErrors(errs: Record<string, string[]>): Errors {
 const focusFirstInvalid = () =>
   requestAnimationFrame(() => document.querySelector<HTMLElement>("[data-invalid='true']")?.focus());
 
+/** One validation routine shared by the single form and the Excel upload. */
+function validateLearner(form: LearnerForm): Errors {
+  const e: Errors = {};
+  const req = (k: string, v: string, msg: string) => { if (!v.trim()) e[k] = msg; };
+  req("firstName", form.firstName, "Enter the learner's first name");
+  req("surname", form.surname, "Enter the learner's surname");
+  if (!form.gender) e.gender = "Select a gender";
+  req("dateOfBirth", form.dateOfBirth, "Enter the date of birth");
+  if (form.photo && form.photo.size > MAX_PHOTO_BYTES) e.photo = "The photo must be 2 MB or smaller";
+  req("admissionNo", form.admissionNo, "Enter the admission number");
+  req("admissionDate", form.admissionDate, "Enter the admission date");
+  if (!form.grade) e.grade = "Select a grade";
+  req("stream", form.stream, "Select a stream");
+  if (!form.pathway) e.pathway = "Select a pathway";
+  else if (form.subjects.length < 3) e.subjects = "Choose at least 3 elective subjects";
+  if (!form.residence) e.residence = "Select day or boarding";
+  const g = form.primaryGuardian;
+  req("pg.fullName", g.fullName, "Enter the guardian's full name");
+  if (!g.relationship) e["pg.relationship"] = "Select the relationship";
+  if (!phoneOk(g.phone)) e["pg.phone"] = "Enter a valid Kenyan phone number, e.g. 0712 345 678";
+  if (g.email && !emailOk(g.email)) e["pg.email"] = "Enter a valid email address";
+  // The second guardian is optional, but must be complete once started.
+  const s = form.secondaryGuardian;
+  if (s.fullName.trim()) {
+    if (!s.relationship) e["sg.relationship"] = "Select the relationship";
+    if (!phoneOk(s.phone)) e["sg.phone"] = "Enter a valid Kenyan phone number";
+  }
+  if (s.email && !emailOk(s.email)) e["sg.email"] = "Enter a valid email address";
+  req("emergencyName", form.emergencyName, "Enter an emergency contact");
+  if (!phoneOk(form.emergencyPhone)) e.emergencyPhone = "Enter a valid Kenyan phone number";
+  if (!form.consentDataUse) e.consentDataUse = "Guardian consent to data use is required";
+  return e;
+}
+
+/* ---------- Excel template definition ---------- */
+
+interface Column {
+  key: string; // learner field, or "pg.x" / "sg.x" for guardians
+  header: string;
+  required?: boolean;
+  example: string;
+  width?: number;
+}
+
+const COLUMNS: Column[] = [
+  // Learner details
+  { key: "firstName", header: "First name *", required: true, example: "Jane" },
+  { key: "middleName", header: "Middle name", example: "Wanjiru" },
+  { key: "surname", header: "Surname *", required: true, example: "Mwangi" },
+  { key: "gender", header: "Gender *", required: true, example: "Female" },
+  { key: "dateOfBirth", header: "Date of birth * (YYYY-MM-DD)", required: true, example: "2009-03-14", width: 22 },
+  { key: "nationality", header: "Nationality", example: "Kenyan" },
+  { key: "birthCertNo", header: "Birth certificate number", example: "12345678", width: 22 },
+  { key: "upi", header: "UPI (NEMIS)", example: "ABC123XYZ" },
+  // Admission & academic
+  { key: "admissionNo", header: "Admission number *", required: true, example: "EXAMPLE", width: 20 },
+  { key: "admissionDate", header: "Admission date * (YYYY-MM-DD)", required: true, example: "2026-01-12", width: 24 },
+  { key: "grade", header: "Grade * (10, 11 or 12)", required: true, example: "10", width: 20 },
+  { key: "stream", header: "Stream * (A-F)", required: true, example: "A" },
+  { key: "pathway", header: "Pathway *", required: true, example: "STEM" },
+  { key: "subjects", header: "Elective subjects * (comma separated, min 3)", required: true, example: "Mathematics, Biology, Chemistry", width: 40 },
+  { key: "residence", header: "Day or boarding *", required: true, example: "Day" },
+  { key: "previousSchool", header: "Previous (junior) school", example: "Chuka Junior School", width: 24 },
+  { key: "kjseaIndexNo", header: "KJSEA index number", example: "", width: 20 },
+  { key: "kjseaPerformance", header: "KJSEA performance summary", example: "Meeting expectations", width: 24 },
+  // Primary guardian
+  { key: "pg.fullName", header: "Primary guardian - Full name *", required: true, example: "Mary Mwangi", width: 26 },
+  { key: "pg.relationship", header: "Primary guardian - Relationship *", required: true, example: "Mother", width: 26 },
+  { key: "pg.nationalId", header: "Primary guardian - National ID", example: "23456789", width: 24 },
+  { key: "pg.phone", header: "Primary guardian - Phone *", required: true, example: "0712345678", width: 24 },
+  { key: "pg.altPhone", header: "Primary guardian - Alt phone", example: "", width: 24 },
+  { key: "pg.email", header: "Primary guardian - Email", example: "mary@example.com", width: 24 },
+  { key: "pg.occupation", header: "Primary guardian - Occupation", example: "Teacher", width: 26 },
+  { key: "pg.address", header: "Primary guardian - Address / county", example: "Tharaka Nithi", width: 28 },
+  // Secondary guardian
+  { key: "sg.fullName", header: "Second guardian - Full name", example: "", width: 26 },
+  { key: "sg.relationship", header: "Second guardian - Relationship", example: "", width: 26 },
+  { key: "sg.nationalId", header: "Second guardian - National ID", example: "", width: 24 },
+  { key: "sg.phone", header: "Second guardian - Phone", example: "", width: 24 },
+  { key: "sg.altPhone", header: "Second guardian - Alt phone", example: "", width: 24 },
+  { key: "sg.email", header: "Second guardian - Email", example: "", width: 24 },
+  { key: "sg.occupation", header: "Second guardian - Occupation", example: "", width: 26 },
+  { key: "sg.address", header: "Second guardian - Address / county", example: "", width: 28 },
+  // Health & emergency
+  { key: "emergencyName", header: "Emergency contact name *", required: true, example: "Peter Mwangi", width: 24 },
+  { key: "emergencyPhone", header: "Emergency contact phone *", required: true, example: "0722333444", width: 24 },
+  { key: "medicalConditions", header: "Medical conditions", example: "", width: 24 },
+  { key: "allergies", header: "Allergies", example: "", width: 20 },
+  { key: "specialNeeds", header: "Special needs or learning support", example: "", width: 28 },
+  // Consent
+  { key: "consentDataUse", header: "Consent: data use * (Yes/No)", required: true, example: "Yes", width: 24 },
+  { key: "consentAi", header: "Consent: AI tools (Yes/No)", example: "Yes", width: 24 },
+  { key: "consentPhoto", header: "Consent: photo use (Yes/No)", example: "Yes", width: 24 },
+];
+
+const normHeader = (s: string) => s.toLowerCase().replace(/\*/g, "").replace(/[^a-z0-9]/g, "");
+const COLUMN_BY_HEADER: Record<string, Column> = Object.fromEntries(COLUMNS.map((c) => [normHeader(c.header), c]));
+const labelOf = (key: string) => COLUMNS.find((c) => c.key === key)?.header.replace(/\s*\*/g, "").replace(/\s*\(.*\)$/, "") ?? key;
+
+function downloadTemplate() {
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: the learner rows go here
+  const ws = XLSX.utils.aoa_to_sheet([COLUMNS.map((c) => c.header), COLUMNS.map((c) => c.example)]);
+  ws["!cols"] = COLUMNS.map((c) => ({ wch: c.width ?? 18 }));
+  XLSX.utils.book_append_sheet(wb, ws, "Learners");
+
+  // Sheet 2: instructions
+  const instructions = [
+    ["How to use this template"],
+    [""],
+    ["1. Fill one learner per row on the 'Learners' sheet. Do not rename or reorder the column headings."],
+    ["2. Columns marked * are required."],
+    ["3. Row 2 is an example (admission number EXAMPLE). It is skipped on upload, so overwrite or delete it."],
+    ["4. Dates must be written as YYYY-MM-DD, e.g. 2009-03-14."],
+    ["5. Phone numbers must be Kenyan, e.g. 0712345678 or +254712345678."],
+    ["6. Elective subjects go in one cell, separated by commas, and must belong to the chosen pathway (see 'Allowed values')."],
+    ["7. The second guardian is optional, but if you give a name, also give the relationship and phone."],
+    ["8. Consent columns take Yes or No. Consent to data use must be Yes."],
+    ["9. Photos cannot be uploaded from Excel. Add them later from the learner's profile."],
+  ];
+  const wsInfo = XLSX.utils.aoa_to_sheet(instructions);
+  wsInfo["!cols"] = [{ wch: 110 }];
+  XLSX.utils.book_append_sheet(wb, wsInfo, "Instructions");
+
+  // Sheet 3: allowed values
+  const lists: [string, string[]][] = [
+    ["Gender", GENDERS],
+    ["Grade", GRADES],
+    ["Stream", STREAMS],
+    ["Pathway", PATHWAYS],
+    ["Day or boarding", RESIDENCES],
+    ["Relationship", RELATIONSHIPS],
+    ["STEM electives", ELECTIVES.STEM],
+    ["Social Sciences electives", ELECTIVES["Social Sciences"]],
+    ["Arts & Sports electives", ELECTIVES["Arts & Sports"]],
+    ["Consent", ["Yes", "No"]],
+  ];
+  const height = Math.max(...lists.map(([, v]) => v.length));
+  const aoa: string[][] = [lists.map(([h]) => h)];
+  for (let i = 0; i < height; i++) aoa.push(lists.map(([, v]) => v[i] ?? ""));
+  const wsLists = XLSX.utils.aoa_to_sheet(aoa);
+  wsLists["!cols"] = lists.map(() => ({ wch: 24 }));
+  XLSX.utils.book_append_sheet(wb, wsLists, "Allowed values");
+
+  XLSX.writeFile(wb, "learner-registration-template.xlsx");
+}
+
+/* ---------- Excel parsing ---------- */
+
+const norm = (s: string) => s.toLowerCase().replace(/&/g, "and").replace(/\s+/g, " ").trim();
+
+const toStr = (v: unknown): string => {
+  if (v === null || v === undefined) return "";
+  if (v instanceof Date) {
+    // +12h keeps the calendar day right whatever the timezone offset SheetJS applied
+    return new Date(v.getTime() + 12 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  }
+  return String(v).trim();
+};
+
+const toDateStr = (raw: string): string => {
+  const dmy = raw.match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{4})$/);
+  if (dmy) return `${dmy[3]}-${dmy[2].padStart(2, "0")}-${dmy[1].padStart(2, "0")}`;
+  return raw;
+};
+
+/** Excel drops the leading zero of phone numbers; put it back. */
+const toPhone = (raw: string): string => {
+  const v = raw.replace(/\s/g, "");
+  if (/^[17]\d{8}$/.test(v)) return `0${v}`;
+  if (/^254[17]\d{8}$/.test(v)) return `+${v}`;
+  return v;
+};
+
+const toBool = (raw: string) => ["yes", "y", "true", "1", "x"].includes(raw.trim().toLowerCase());
+
+const matchOption = (raw: string, options: string[]): string => options.find((o) => norm(o) === norm(raw)) ?? "";
+
+function recordToLearner(cells: Record<string, string>): { form: LearnerForm; errors: Errors } {
+  const extra: Errors = {};
+  const c = (k: string) => cells[k] ?? "";
+
+  const pickEnum = (key: string, options: string[], rawValue = c(key)): string => {
+    if (!rawValue) return "";
+    const m = matchOption(rawValue, options);
+    if (!m) extra[key] = `Use one of: ${options.join(", ")}`;
+    return m;
+  };
+
+  const pathway = pickEnum("pathway", PATHWAYS) as Pathway;
+
+  const rawSubjects = c("subjects").split(/[,;\n]/).map((s) => s.trim()).filter(Boolean);
+  let subjects: string[] = [];
+  if (pathway) {
+    const allowed = ELECTIVES[pathway as Exclude<Pathway, "">];
+    const unknown: string[] = [];
+    rawSubjects.forEach((s) => {
+      const m = matchOption(s, allowed);
+      if (m) { if (!subjects.includes(m)) subjects.push(m); } else unknown.push(s);
+    });
+    if (unknown.length) extra.subjects = `Not offered in ${pathway}: ${unknown.join(", ")}`;
+  } else {
+    subjects = rawSubjects;
+  }
+
+  const dob = toDateStr(c("dateOfBirth"));
+  const adm = toDateStr(c("admissionDate"));
+  if (dob && !/^\d{4}-\d{2}-\d{2}$/.test(dob)) extra.dateOfBirth = "Use the format YYYY-MM-DD";
+  if (adm && !/^\d{4}-\d{2}-\d{2}$/.test(adm)) extra.admissionDate = "Use the format YYYY-MM-DD";
+
+  const guardian = (p: "pg" | "sg"): Guardian => ({
+    fullName: c(`${p}.fullName`),
+    relationship: pickEnum(`${p}.relationship`, RELATIONSHIPS),
+    nationalId: c(`${p}.nationalId`),
+    phone: toPhone(c(`${p}.phone`)),
+    altPhone: toPhone(c(`${p}.altPhone`)),
+    email: c(`${p}.email`),
+    occupation: c(`${p}.occupation`),
+    address: c(`${p}.address`),
+  });
+
+  const form: LearnerForm = {
+    firstName: c("firstName"),
+    middleName: c("middleName"),
+    surname: c("surname"),
+    gender: pickEnum("gender", GENDERS) as Gender,
+    dateOfBirth: dob,
+    nationality: c("nationality") || "Kenyan",
+    birthCertNo: c("birthCertNo"),
+    upi: c("upi"),
+    photo: null,
+    admissionNo: c("admissionNo"),
+    admissionDate: adm,
+    grade: pickEnum("grade", GRADES, c("grade").replace(/grade/i, "").trim()) as LearnerForm["grade"],
+    stream: pickEnum("stream", STREAMS),
+    pathway,
+    subjects,
+    residence: pickEnum("residence", RESIDENCES) as Residence,
+    previousSchool: c("previousSchool"),
+    kjseaIndexNo: c("kjseaIndexNo"),
+    kjseaPerformance: c("kjseaPerformance"),
+    primaryGuardian: guardian("pg"),
+    secondaryGuardian: guardian("sg"),
+    emergencyName: c("emergencyName"),
+    emergencyPhone: toPhone(c("emergencyPhone")),
+    medicalConditions: c("medicalConditions"),
+    allergies: c("allergies"),
+    specialNeeds: c("specialNeeds"),
+    consentDataUse: toBool(c("consentDataUse")),
+    consentAi: toBool(c("consentAi")),
+    consentPhoto: toBool(c("consentPhoto")),
+  };
+
+  return { form, errors: { ...validateLearner(form), ...extra } };
+}
+
+/* ---------- Bulk upload component ---------- */
+
+type RowStatus = "ready" | "invalid" | "saving" | "done" | "failed";
+
+interface BulkRow {
+  line: number; // row number in the Excel sheet
+  form: LearnerForm;
+  errors: Errors;
+  status: RowStatus;
+  message?: string;
+}
+
+const STATUS_LABEL: Record<RowStatus, string> = {
+  ready: "Ready",
+  invalid: "Needs fixing",
+  saving: "Saving…",
+  done: "Registered",
+  failed: "Failed",
+};
+
+const STATUS_COLOR: Record<RowStatus, string> = {
+  ready: "#1d4ed8",
+  invalid: "#b91c1c",
+  saving: "#6b7280",
+  done: "#15803d",
+  failed: "#b91c1c",
+};
+
+function BulkUpload({ onSubmit }: { onSubmit: SubmitFn }) {
+  const [rows, setRows] = useState<BulkRow[]>([]);
+  const [fileName, setFileName] = useState("");
+  const [parsing, setParsing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const patch = (i: number, p: Partial<BulkRow>) =>
+    setRows((prev) => prev.map((r, idx) => (idx === i ? { ...r, ...p } : r)));
+
+  const reset = () => {
+    setRows([]);
+    setFileName("");
+    if (fileRef.current) fileRef.current.value = "";
+  };
+
+  const handleFile = async (file: File | undefined) => {
+    if (!file) return;
+    setParsing(true);
+    try {
+      const buf = await file.arrayBuffer();
+      const wb = XLSX.read(buf, { type: "array", cellDates: true });
+      const sheet = wb.Sheets["Learners"] ?? wb.Sheets[wb.SheetNames[0]];
+      if (!sheet) throw new Error("The workbook has no sheets.");
+
+      const records = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: true });
+      if (!records.length) {
+        toast.error("The file is empty", "Add at least one learner row under the headings and try again.");
+        reset();
+        return;
+      }
+
+      // Check that the required headings are present
+      const present = new Set(Object.keys(records[0]).map(normHeader));
+      const missing = COLUMNS.filter((c) => c.required && !present.has(normHeader(c.header))).map((c) => labelOf(c.key));
+      if (missing.length) {
+        toast.error("Wrong template", `Missing columns: ${missing.slice(0, 4).join(", ")}${missing.length > 4 ? "…" : ""}. Download the template and use it.`);
+        reset();
+        return;
+      }
+
+      const built: BulkRow[] = [];
+      const seenAdm = new Map<string, number>();
+
+      records.forEach((rec, idx) => {
+        const cells: Record<string, string> = {};
+        Object.entries(rec).forEach(([h, v]) => {
+          const col = COLUMN_BY_HEADER[normHeader(h)];
+          if (col) {
+            const s = toStr(v);
+            cells[col.key] = s;
+          }
+        });
+
+        const isBlank = Object.values(cells).every((v) => !v);
+        const isExample = (cells.admissionNo ?? "").toUpperCase() === "EXAMPLE";
+        if (isBlank || isExample) return;
+
+        const line = idx + 2; // +1 for the heading row, +1 because Excel rows start at 1
+        const { form, errors } = recordToLearner(cells);
+
+        const adm = form.admissionNo.trim().toLowerCase();
+        if (adm) {
+          if (seenAdm.has(adm)) errors.admissionNo = `Duplicate admission number (also on row ${seenAdm.get(adm)})`;
+          else seenAdm.set(adm, line);
+        }
+
+        built.push({ line, form, errors, status: Object.keys(errors).length ? "invalid" : "ready" });
+      });
+
+      if (!built.length) {
+        toast.error("No learners found", "Only the example row was in the file. Add real learners and try again.");
+        reset();
+        return;
+      }
+
+      setRows(built);
+      setFileName(file.name);
+      const bad = built.filter((r) => r.status === "invalid").length;
+      if (bad) toast.error("Some rows need fixing", `${bad} of ${built.length} rows have problems. Fix them in Excel and upload again, or register the valid rows now.`);
+      else toast.success("File checked", `${built.length} learners are ready to register.`);
+    } catch {
+      toast.error("Could not read the file", "Use the downloaded .xlsx template and make sure the file is not corrupted.");
+      reset();
+    } finally {
+      setParsing(false);
+    }
+  };
+
+  const runImport = async () => {
+    const todo = rows.map((r, i) => ({ r, i })).filter(({ r }) => r.status === "ready" || r.status === "failed");
+    if (!todo.length) return;
+
+    setImporting(true);
+    let ok = 0;
+    let bad = 0;
+    let stopped = false;
+
+    for (const { r, i } of todo) {
+      patch(i, { status: "saving", message: undefined });
+      try {
+        await onSubmit(r.form);
+        patch(i, { status: "done" });
+        ok++;
+      } catch (err) {
+        bad++;
+        if (err instanceof ApiError && err.status === 422) {
+          const mapped = mapServerErrors(err.errors);
+          const first = Object.entries(mapped)[0];
+          patch(i, { status: "failed", message: first ? `${labelOf(first[0])}: ${first[1]}` : err.message });
+        } else if (err instanceof ApiError && err.status === 401) {
+          patch(i, { status: "failed", message: "Session expired" });
+          toast.error("Please log in again", "Your session has expired. Rows not yet saved can be retried after logging in.");
+          stopped = true;
+        } else if (err instanceof ApiError && err.status === 403) {
+          patch(i, { status: "failed", message: "Not allowed" });
+          toast.error("Not allowed", "You do not have permission to register learners.");
+          stopped = true;
+        } else if (err instanceof ApiError) {
+          patch(i, { status: "failed", message: err.message });
+        } else {
+          patch(i, { status: "failed", message: "Cannot reach the server" });
+          toast.error("Cannot reach the server", "Check your connection and that the backend is running, then retry.");
+          stopped = true;
+        }
+        if (stopped) break;
+      }
+    }
+
+    setImporting(false);
+    if (ok) toast.success("Upload finished", `${ok} ${ok === 1 ? "learner" : "learners"} registered${bad ? `, ${bad} failed` : ""}.`);
+    else if (!stopped) toast.error("Nothing was registered", "Check the Issues column for each row.");
+  };
+
+  const counts = useMemo(() => {
+    const c = { ready: 0, invalid: 0, done: 0, failed: 0 };
+    rows.forEach((r) => { if (r.status in c) c[r.status as keyof typeof c]++; });
+    return c;
+  }, [rows]);
+
+  const pending = counts.ready + counts.failed;
+
+  const issues = (r: BulkRow): string => {
+    if (r.message) return r.message;
+    const e = Object.entries(r.errors);
+    if (!e.length) return "";
+    return e.map(([k, m]) => `${labelOf(k)}: ${m}`).join(" · ");
+  };
+
+  return (
+    <div>
+      <section className="rl-card">
+        <h2>Upload learners from Excel</h2>
+        <p className="rl-note">
+          1. Download the template. 2. Fill one learner per row. 3. Upload it here, review the check results, then register.
+        </p>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center", marginTop: 12 }}>
+          <button type="button" className="rl-btn" onClick={downloadTemplate}>Download Excel template</button>
+          <label htmlFor="bulk-file" className="rl-btn rl-primary" style={{ cursor: "pointer" }}>
+            {parsing ? "Reading…" : "Choose filled Excel file"}
+          </label>
+          <input
+            id="bulk-file"
+            ref={fileRef}
+            type="file"
+            accept=".xlsx,.xls,.csv"
+            hidden
+            disabled={parsing || importing}
+            onChange={(e) => handleFile(e.target.files?.[0])}
+          />
+          {fileName && <small>{fileName}</small>}
+        </div>
+      </section>
+
+      {rows.length > 0 && (
+        <section className="rl-card">
+          <h2>Check results</h2>
+          <p className="rl-note">
+            {rows.length} rows: {counts.ready} ready, {counts.invalid} need fixing
+            {counts.done ? `, ${counts.done} registered` : ""}
+            {counts.failed ? `, ${counts.failed} failed` : ""}.
+          </p>
+
+          <div style={{ overflow: "auto", maxHeight: 420, border: "1px solid #e5e7eb", borderRadius: 8, marginTop: 12 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
+              <thead>
+                <tr style={{ position: "sticky", top: 0, background: "#f9fafb", textAlign: "left" }}>
+                  <th style={{ padding: "8px 10px" }}>Row</th>
+                  <th style={{ padding: "8px 10px" }}>Adm. no</th>
+                  <th style={{ padding: "8px 10px" }}>Name</th>
+                  <th style={{ padding: "8px 10px" }}>Grade / Pathway</th>
+                  <th style={{ padding: "8px 10px" }}>Status</th>
+                  <th style={{ padding: "8px 10px" }}>Issues</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.line} style={{ borderTop: "1px solid #e5e7eb", verticalAlign: "top" }}>
+                    <td style={{ padding: "8px 10px" }}>{r.line}</td>
+                    <td style={{ padding: "8px 10px" }}>{r.form.admissionNo || "-"}</td>
+                    <td style={{ padding: "8px 10px" }}>{`${r.form.firstName} ${r.form.surname}`.trim() || "-"}</td>
+                    <td style={{ padding: "8px 10px" }}>
+                      {r.form.grade ? `Grade ${r.form.grade}` : "-"}{r.form.stream ? ` ${r.form.stream}` : ""}
+                      {r.form.pathway ? ` · ${r.form.pathway}` : ""}
+                    </td>
+                    <td style={{ padding: "8px 10px", color: STATUS_COLOR[r.status], fontWeight: 600, whiteSpace: "nowrap" }}>
+                      {STATUS_LABEL[r.status]}
+                    </td>
+                    <td style={{ padding: "8px 10px", color: "#b91c1c", minWidth: 240 }}>{issues(r)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="rl-actions" style={{ marginTop: 16 }}>
+            <button type="button" className="rl-btn" onClick={reset} disabled={importing}>Clear</button>
+            <button type="button" className="rl-btn rl-primary" onClick={runImport} disabled={importing || pending === 0}>
+              {importing ? "Registering…" : `Register ${pending} ${pending === 1 ? "learner" : "learners"}`}
+            </button>
+          </div>
+        </section>
+      )}
+    </div>
+  );
+}
+
 /* ---------- Component ---------- */
 
 /* Field wrapper (kept outside the page component so inputs keep focus while typing) */
@@ -172,6 +691,7 @@ function Field({ id, label, error, hint, children }: { id: string; label: string
 
 
 function RegisterLearner({ onSubmit = registerLearner, role = "HOI", user, onNavigate, onLogout }: Props) {
+  const [mode, setMode] = useState<"single" | "bulk">("single");
   const [form, setForm] = useState<LearnerForm>(initialForm);
   const [errors, setErrors] = useState<Errors>({});
   const [saving, setSaving] = useState(false);
@@ -192,44 +712,11 @@ function RegisterLearner({ onSubmit = registerLearner, role = "HOI", user, onNav
       subjects: f.subjects.includes(s) ? f.subjects.filter((x) => x !== s) : [...f.subjects, s],
     }));
 
-  const validate = (): Errors => {
-    const e: Errors = {};
-    const req = (k: string, v: string, msg: string) => { if (!v.trim()) e[k] = msg; };
-    req("firstName", form.firstName, "Enter the learner's first name");
-    req("surname", form.surname, "Enter the learner's surname");
-    if (!form.gender) e.gender = "Select a gender";
-    req("dateOfBirth", form.dateOfBirth, "Enter the date of birth");
-    if (form.photo && form.photo.size > MAX_PHOTO_BYTES) e.photo = "The photo must be 2 MB or smaller";
-    req("admissionNo", form.admissionNo, "Enter the admission number");
-    req("admissionDate", form.admissionDate, "Enter the admission date");
-    if (!form.grade) e.grade = "Select a grade";
-    req("stream", form.stream, "Select a stream");
-    if (!form.pathway) e.pathway = "Select a pathway";
-    else if (form.subjects.length < 3) e.subjects = "Choose at least 3 elective subjects";
-    if (!form.residence) e.residence = "Select day or boarding";
-    const g = form.primaryGuardian;
-    req("pg.fullName", g.fullName, "Enter the guardian's full name");
-    if (!g.relationship) e["pg.relationship"] = "Select the relationship";
-    if (!phoneOk(g.phone)) e["pg.phone"] = "Enter a valid Kenyan phone number, e.g. 0712 345 678";
-    if (g.email && !emailOk(g.email)) e["pg.email"] = "Enter a valid email address";
-    // The second guardian is optional, but must be complete once started.
-    const s = form.secondaryGuardian;
-    if (s.fullName.trim()) {
-      if (!s.relationship) e["sg.relationship"] = "Select the relationship";
-      if (!phoneOk(s.phone)) e["sg.phone"] = "Enter a valid Kenyan phone number";
-    }
-    if (s.email && !emailOk(s.email)) e["sg.email"] = "Enter a valid email address";
-    req("emergencyName", form.emergencyName, "Enter an emergency contact");
-    if (!phoneOk(form.emergencyPhone)) e.emergencyPhone = "Enter a valid Kenyan phone number";
-    if (!form.consentDataUse) e.consentDataUse = "Guardian consent to data use is required";
-    return e;
-  };
-
   const handleSubmit = async (ev: React.FormEvent) => {
     ev.preventDefault();
     if (saving) return;
 
-    const e = validate();
+    const e = validateLearner(form);
     setErrors(e);
     const count = Object.keys(e).length;
     if (count) {
@@ -328,8 +815,19 @@ function RegisterLearner({ onSubmit = registerLearner, role = "HOI", user, onNav
         <header className="rl-head">
           <h1>Register learner</h1>
           <p>Add a new learner to the Senior School Portal. Fields marked * are required.</p>
+          <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+            <button type="button" className={`rl-btn${mode === "single" ? " rl-primary" : ""}`} onClick={() => setMode("single")}>
+              Single registration
+            </button>
+            <button type="button" className={`rl-btn${mode === "bulk" ? " rl-primary" : ""}`} onClick={() => setMode("bulk")}>
+              Bulk upload (Excel)
+            </button>
+          </div>
         </header>
 
+        {mode === "bulk" ? (
+          <BulkUpload onSubmit={onSubmit} />
+        ) : (
         <form key={formKey} onSubmit={handleSubmit} noValidate>
 
           <section className="rl-card">
@@ -496,6 +994,7 @@ function RegisterLearner({ onSubmit = registerLearner, role = "HOI", user, onNav
             <button type="submit" className="rl-btn rl-primary" disabled={saving}>{saving ? "Saving…" : "Register learner"}</button>
           </div>
         </form>
+        )}
       </div>
     </DashboardLayout>
   );

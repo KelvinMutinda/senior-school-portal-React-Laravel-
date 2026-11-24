@@ -6,6 +6,7 @@ use App\Http\Requests\RegisterLearnerRequest;
 use App\Models\Guardian;
 use App\Models\Learner;
 use App\Models\LearnerHealthProfile;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -86,6 +87,17 @@ class LearnerController extends Controller
                     'registered_by' => $request->user()?->id,
                 ]);
 
+                // Login account: learners sign in with their admission number and the
+                // default password from .env (LEARNER_DEFAULT_PASSWORD). They must
+                // change it at first login. If the default is missing this throws,
+                // and the whole registration is rolled back.
+                $user = User::registerLearner(
+                    ['name' => trim("{$d['firstName']} {$d['surname']}")],
+                    $d['admissionNo']
+                );
+                $learner->user_id = $user->id;
+                $learner->save();
+
                 // Guardians: reuse an existing record when the phone matches (siblings).
                 $primary = $this->guardian($d['primaryGuardian']);
                 $learner->guardians()->attach($primary->id, [
@@ -153,6 +165,7 @@ class LearnerController extends Controller
                 'id' => $learner->id,
                 'admission_no' => $learner->admission_no,
                 'name' => $learner->full_name,
+                'login' => 'Sign in as Learner with the admission number and the default learner password.',
             ],
         ], 201);
     }
