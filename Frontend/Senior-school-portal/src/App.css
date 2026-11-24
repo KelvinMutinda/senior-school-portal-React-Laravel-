@@ -5368,3 +5368,43 @@ em.up { color: var(--green); } em.down { color: var(--red); }
   .ss-toast-close { color: #aab4c2; }
   .ss-toast-close:hover { background: #2a3544; color: #fff; }
 }
+/* ==========================================================================
+   18. Results analysis (View Results page)
+   Append to App.css. Uses the existing --ss-* tokens, so light and dark both work.
+   ========================================================================== */
+
+.ss-an-bar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px 18px; padding: 12px 14px; background: var(--ss-tint); border: 1px solid var(--ss-line); border-radius: 10px; }
+.ss-an-bar > p { flex: 1 1 260px; font-size: 13px; }
+
+.ss-an-sec h4 { margin: 0; font-size: 15px; font-weight: 700; color: var(--ss-ink); }
+.ss-an-note { margin: 3px 0 8px; max-width: 78ch; }
+.ss-an-sec .ss-mk-wrap { margin-top: 8px; max-height: 460px; }
+.ss-an-sec .ss-table th, .ss-an-sec .ss-table td { white-space: nowrap; }
+.ss-an-sec .ss-table td:last-child:not(.ss-num) { white-space: normal; min-width: 150px; }
+
+/* small bar under a number */
+.ss-cellbar { display: block; width: 100%; min-width: 64px; height: 4px; margin-top: 4px; background: var(--ss-line); border-radius: 999px; overflow: hidden; }
+.ss-cellbar i { display: block; height: 100%; background: var(--ss-primary); border-radius: inherit; }
+
+/* shaded cells for the subject-by-class grid and the level shares */
+.ss-heat { font-weight: 600; }
+
+/* change since the previous exam */
+.ss-delta { display: inline-block; min-width: 46px; padding: 1px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; text-align: center; background: var(--ss-tint); color: var(--ss-muted); }
+.ss-delta.up { background: rgba(30,122,79,.13); color: var(--ss-ok); }
+.ss-delta.down { background: rgba(179,38,30,.12); color: var(--ss-danger); }
+.ss-shell[data-theme="dark"] .ss-delta.up { color: #5fd49a; }
+.ss-shell[data-theme="dark"] .ss-delta.down { color: #ff8f86; }
+
+.ss-check-row { display: flex; align-items: flex-start; gap: 8px; margin: 12px 0 0; font-size: 13px; color: var(--ss-ink); }
+.ss-check-row input { margin-top: 3px; }
+
+@media (max-width: 560px) {
+  .ss-an-bar .ss-btn-row { width: 100%; }
+  .ss-an-bar .ss-btn-row .ss-btn { flex: 1 1 0; }
+}
+
+@media print {
+  .ss-an-bar, .ss-mk-tabs { display: none; }
+  .ss-an-sec .ss-mk-wrap { max-height: none; overflow: visible; }
+}

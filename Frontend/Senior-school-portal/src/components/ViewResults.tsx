@@ -1,50 +1,210 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
-import type { jsPDF } from "jspdf";
 // Shared teacher sidebar
 import TeacherSidebar from "../Teachers/TeacherSidebar";
+import { apiUrl, authHeaders } from "../api/authApi";
+import { ChartsDashboard } from "../ResultsCharts";
+import { saveAnalysisPdf, saveClassPdf, saveReportCards } from "../resultsPdf";
+import type { CardData } from "../resultsPdf";
+import "../resultsCharts.css";
 
 /* ------------------------------------------------------------------ */
-/* Types                                                               */
+/* Types (these mirror the JSON from ResultsController)                */
 /* ------------------------------------------------------------------ */
 
-export interface Learner {
-  id: string;
-  admNo: string;
-  name: string;
+export type Level = "Exceeding" | "Meeting" | "Approaching" | "Below";
+export const LEVELS: Level[] = ["Exceeding", "Meeting", "Approaching", "Below"];
+
+export interface Band {
+  min: number;
+  code: string;
+  level: Level;
+  points: number;
 }
 
-export interface Subject {
-  id: string;
-  name: string;
-}
-
-export interface ExamType {
+interface ExamOption {
   id: string;
   name: string;
   max: number;
 }
-
-/** scores[learnerId][subjectId][examId] = "26" | "ABS" | "" (published marks only) */
-export type ScoreSheet = Record<string, Record<string, Record<string, string>>>;
-
-export interface ClassResults {
+interface YearOption {
   id: string;
   label: string;
-  learners: Learner[];
-  subjects: Subject[];
-  scores: ScoreSheet;
+  hasResults: boolean;
+  hasPending: boolean;
+  exams: ExamOption[];
+}
+interface ClassOption {
+  id: string;
+  label: string;
+  grade: number;
+}
+interface Options {
+  currentYearId: string | null;
+  canIncludePending: boolean;
+  meetingMark: number;
+  bands: Band[];
+  grades: { level: number; label: string }[];
+  classes: ClassOption[];
+  years: YearOption[];
 }
 
-export interface YearResults {
-  id: string;
+type Levels = Record<Level, number>;
+interface Top {
+  name: string;
+  className: string;
+  mean: number;
+}
+interface Block {
+  learners: number;
+  withResults: number;
+  mean: number | null;
+  median: number | null;
+  high: number | null;
+  low: number | null;
+  meetingRate: number | null;
+  levels: Levels;
+  top: Top | null;
+}
+interface GradeRow extends Block {
+  grade: number;
   label: string;
-  exams: ExamType[];
-  classes: ClassResults[];
+  streams: number;
+}
+interface StreamRow extends Block {
+  id: number;
+  label: string;
+  grade: number;
+  rank: number | null;
+  rankInGrade: number | null;
+  best: string | null;
+  weakest: string | null;
+}
+interface SubjectRow {
+  id: number;
+  name: string;
+  count: number;
+  mean: number | null;
+  high: number | null;
+  low: number | null;
+  sd: number | null;
+  meetingRate: number | null;
+  byGrade: Record<string, number>;
+  bestStream: string | null;
+  weakestStream: string | null;
+  levels: Levels;
+}
+interface BandRow {
+  code: string;
+  level: Level;
+  min: number;
+  count: number;
+  pct: number;
+}
+interface LearnerLine {
+  id: number;
+  admNo: string;
+  name: string;
+  className: string;
+  gender: string | null;
+  mean: number | null;
+  code: string | null;
+  level: Level | null;
+  rank: number | null;
+  best: string | null;
+  weakest: string | null;
+  belowCount: number;
+}
+interface Mover {
+  id: number;
+  admNo: string;
+  name: string;
+  className: string;
+  now: number;
+  prev: number;
+  change: number;
+  nowCode: string;
+  prevCode: string;
+  rankNow: number | null;
+  rankPrev: number | null;
+}
+interface Change {
+  name: string;
+  now: number;
+  prev: number;
+  change: number;
+  n: number;
+}
+interface Comparison {
+  current: { id: number; name: string };
+  previous: { id: number; name: string };
+  paired: number;
+  summary: { meanNow: number; meanPrev: number; change: number; improved: number; declined: number; steady: number } | null;
+  subjects: Change[];
+  streams: (Change & { label: string; grade: number })[];
+  grades: (Change & { label: string })[];
+  improved: Mover[];
+  declined: Mover[];
+}
+interface Meta {
+  year: string;
+  scope: string;
+  exam: string;
+  examsUsed: string[];
+  includesPending: boolean;
+  generatedAt: string;
+}
+export interface Analysis {
+  meta: Meta;
+  summary: {
+    learners: number;
+    withResults: number;
+    mean: number | null;
+    median: number | null;
+    high: number | null;
+    low: number | null;
+    sd: number | null;
+    meetingRate: number | null;
+    belowMeeting: number;
+    absentMarks: number;
+    subjects: number;
+    streams: number;
+    meetingMark: number;
+  };
+  bands: BandRow[];
+  grades: GradeRow[];
+  streams: StreamRow[];
+  subjects: SubjectRow[];
+  subjectByStream: { streams: { id: number; label: string }[]; rows: { subject: string; means: (number | null)[] }[] };
+  gender: { gender: string; learners: number; withResults: number; mean: number | null; meetingRate: number | null; levels: Levels }[];
+  top: LearnerLine[];
+  support: LearnerLine[];
+  comparison: Comparison | null;
+  exams: { id: number; name: string; max: number }[];
+}
+
+interface ClassLearner {
+  id: number;
+  admNo: string;
+  name: string;
+  gender: string | null;
+  pcts: Record<string, number | null>;
+  mean: number | null;
+  points: number;
+  code: string | null;
+  level: Level | null;
+  rank: number | null;
+}
+interface ClassData {
+  meta: Meta;
+  subjects: { id: number; name: string }[];
+  learners: ClassLearner[];
+  ranked: number;
+  summary: { mean: number | null; high: number | null; low: number | null; meetingRate: number | null };
+  subjectStats: { subjectId: number; mean: number | null; high: number | null; low: number | null; meetingRate: number | null; count: number }[];
 }
 
 export interface ViewResultsProps {
-  years?: YearResults[];
   schoolName?: string;
   termLabel?: string;
   userName?: string;
@@ -52,361 +212,382 @@ export interface ViewResultsProps {
 }
 
 /* ------------------------------------------------------------------ */
-/* Sample data (remove when you connect the real API)                  */
+/* API                                                                 */
 /* ------------------------------------------------------------------ */
 
-const NAMES = [
-  "Grace Njeri", "Brian Otieno", "Faith Wanjiru", "Kevin Mutua", "Amina Hassan", "Joseph Kamau",
-  "Mercy Achieng", "Daniel Kiprop", "Lucy Wambui", "Samuel Barasa", "Esther Chebet", "Peter Mwangi",
-];
-
-const EAST: Learner[] = NAMES.map((name, i) => ({ id: `e${i + 1}`, admNo: String(1001 + i), name }));
-const WEST: Learner[] = [...NAMES].reverse().map((name, i) => ({ id: `w${i + 1}`, admNo: String(2001 + i), name }));
-
-const SUBJECTS: Subject[] = [
-  { id: "mat", name: "Mathematics" },
-  { id: "eng", name: "English" },
-  { id: "kis", name: "Kiswahili" },
-  { id: "phy", name: "Physics" },
-  { id: "bio", name: "Biology" },
-];
-
-const EXAMS_2026: ExamType[] = [
-  { id: "cat1", name: "CAT 1", max: 30 },
-  { id: "mid", name: "Mid-term test", max: 50 },
-  { id: "exam", name: "End of term exam", max: 100 },
-];
-
-function makeScores(seed: number, learners: Learner[], subjects: Subject[], exams: ExamType[]): ScoreSheet {
-  let s = seed;
-  const rnd = () => {
-    s = (s * 9301 + 49297) % 233280;
-    return s / 233280;
-  };
-  const out: ScoreSheet = {};
-  learners.forEach((l) => {
-    const ability = 0.3 + rnd() * 0.6;
-    out[l.id] = {};
-    subjects.forEach((sub) => {
-      out[l.id][sub.id] = {};
-      exams.forEach((e) => {
-        if (rnd() < 0.03) {
-          out[l.id][sub.id][e.id] = "ABS";
-          return;
-        }
-        const p = Math.min(1, Math.max(0.05, ability + (rnd() - 0.5) * 0.3));
-        out[l.id][sub.id][e.id] = String(Math.round(p * e.max));
-      });
-    });
-  });
-  return out;
+async function api<T>(path: string, signal?: AbortSignal): Promise<T> {
+  const res = await fetch(apiUrl(path), { headers: authHeaders(), signal });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const first = body?.errors ? (Object.values(body.errors as Record<string, string[]>)[0]?.[0] ?? null) : null;
+    throw new Error(
+      first ??
+        body?.message ??
+        (res.status === 401
+          ? "Your session has ended. Please sign in again."
+          : res.status === 403
+            ? "You do not have permission to view results."
+            : "Something went wrong. Please try again."),
+    );
+  }
+  return body as T;
 }
-
-const SAMPLE_YEARS: YearResults[] = [
-  {
-    id: "y2026",
-    label: "2026",
-    exams: EXAMS_2026,
-    classes: [
-      { id: "g10e", label: "Grade 10 East", learners: EAST, subjects: SUBJECTS, scores: makeScores(7, EAST, SUBJECTS, EXAMS_2026) },
-      { id: "g10w", label: "Grade 10 West", learners: WEST, subjects: SUBJECTS, scores: makeScores(21, WEST, SUBJECTS, EXAMS_2026) },
-    ],
-  },
-  {
-    id: "y2025",
-    label: "2025",
-    exams: [{ id: "exam", name: "End of term exam", max: 100 }],
-    classes: [
-      {
-        id: "g9e",
-        label: "Grade 9 East",
-        learners: EAST,
-        subjects: SUBJECTS,
-        scores: makeScores(33, EAST, SUBJECTS, [{ id: "exam", name: "End of term exam", max: 100 }]),
-      },
-    ],
-  },
-];
 
 /* ------------------------------------------------------------------ */
-/* Grading and analysis                                                */
+/* Formatting and grading (exported so they can be unit tested)        */
 /* ------------------------------------------------------------------ */
 
-interface Band {
-  min: number;
-  code: string;
-  level: "Exceeding" | "Meeting" | "Approaching" | "Below";
-  points: number;
+export const isNum = (n: unknown): n is number => typeof n === "number" && !Number.isNaN(n);
+export const fmt1 = (n: number | null | undefined) => (isNum(n) ? (Math.round(n * 10) / 10).toFixed(1) : "–");
+export const signed = (n: number | null | undefined) => (isNum(n) ? `${n > 0 ? "+" : ""}${n.toFixed(1)}` : "–");
+export const levelTag = (level: Level | null) => (level === "Below" ? "ss-tag warn" : level === "Approaching" ? "ss-tag" : "ss-tag ok");
+export const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+export function gradeFor(pct: number, bands: Band[]): Band {
+  return bands.find((b) => pct >= b.min) ?? bands[bands.length - 1];
 }
 
-/** Adjust these cut-offs to match your school's grading policy. */
-const BANDS: Band[] = [
-  { min: 90, code: "EE1", level: "Exceeding", points: 8 },
-  { min: 75, code: "EE2", level: "Exceeding", points: 7 },
-  { min: 58, code: "ME1", level: "Meeting", points: 6 },
-  { min: 41, code: "ME2", level: "Meeting", points: 5 },
-  { min: 31, code: "AE1", level: "Approaching", points: 4 },
-  { min: 21, code: "AE2", level: "Approaching", points: 3 },
-  { min: 11, code: "BE1", level: "Below", points: 2 },
-  { min: 0, code: "BE2", level: "Below", points: 1 },
-];
-
-const LEVELS: Band["level"][] = ["Exceeding", "Meeting", "Approaching", "Below"];
-const MEETING_MARK = 41;
-
-const gradeFor = (pct: number): Band => BANDS.find((b) => pct >= b.min) ?? BANDS[BANDS.length - 1];
-const isNum = (n: number | null | undefined): n is number => typeof n === "number";
-const fmt1 = (n: number | null | undefined) => (isNum(n) ? (Math.round(n * 10) / 10).toString() : "–");
-const levelTag = (level: Band["level"]) => (level === "Below" ? "ss-tag warn" : level === "Approaching" ? "ss-tag" : "ss-tag ok");
-
-function toNumber(raw: string | undefined): number | null {
-  if (!raw) return null;
-  const v = raw.trim().toUpperCase().replace(",", ".");
-  return /^\d+(\.\d+)?$/.test(v) ? Number(v) : null;
-}
-
-function subjectPct(scores: ScoreSheet, learnerId: string, subjectId: string, exams: ExamType[]): number | null {
-  const pcts = exams
-    .map((e) => {
-      const n = toNumber(scores[learnerId]?.[subjectId]?.[e.id]);
-      return n === null ? null : (n / e.max) * 100;
-    })
-    .filter(isNum);
-  return pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : null;
-}
-
-interface LearnerRow {
-  learner: Learner;
-  pcts: Record<string, number | null>;
-  mean: number | null;
-  points: number;
-  band: Band | null;
-  rank: number | null;
-}
-
-interface SubjectStat {
-  subject: Subject;
-  mean: number | null;
-  high: number | null;
-  low: number | null;
-  meetingRate: number | null;
-  count: number;
-}
-
-interface ClassAnalysis {
-  rows: LearnerRow[];
-  ranked: number;
-  mean: number | null;
-  high: number | null;
-  low: number | null;
-  meetingRate: number | null;
-  subjectStats: SubjectStat[];
-  distribution: { level: Band["level"]; count: number; pct: number }[];
-}
-
-function analyseClass(cls: ClassResults, exams: ExamType[], examId: string): ClassAnalysis {
-  const list = examId === "all" ? exams : exams.filter((e) => e.id === examId);
-
-  const rows: LearnerRow[] = cls.learners.map((learner) => {
-    const pcts: Record<string, number | null> = {};
-    let sum = 0;
-    let count = 0;
-    let points = 0;
-    cls.subjects.forEach((s) => {
-      const p = subjectPct(cls.scores, learner.id, s.id, list);
-      pcts[s.id] = p;
-      if (p !== null) {
-        sum += p;
-        count++;
-        points += gradeFor(p).points;
-      }
-    });
-    const mean = count ? sum / count : null;
-    return { learner, pcts, mean, points, band: mean === null ? null : gradeFor(mean), rank: null };
-  });
-
-  const ranked = rows.filter((r) => isNum(r.mean)).sort((a, b) => (b.mean as number) - (a.mean as number));
-  ranked.forEach((r, i) => {
-    r.rank = i > 0 && r.mean === ranked[i - 1].mean ? ranked[i - 1].rank : i + 1;
-  });
-  const sorted = [...ranked, ...rows.filter((r) => r.mean === null)];
-
-  const means = ranked.map((r) => r.mean as number);
-
-  const subjectStats: SubjectStat[] = cls.subjects.map((subject) => {
-    const vals = rows.map((r) => r.pcts[subject.id]).filter(isNum);
-    return {
-      subject,
-      count: vals.length,
-      mean: vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null,
-      high: vals.length ? Math.max(...vals) : null,
-      low: vals.length ? Math.min(...vals) : null,
-      meetingRate: vals.length ? (vals.filter((v) => v >= MEETING_MARK).length / vals.length) * 100 : null,
-    };
-  });
-
-  const allPcts = rows.flatMap((r) => Object.values(r.pcts)).filter(isNum);
-  const distribution = LEVELS.map((level) => {
-    const count = allPcts.filter((p) => gradeFor(p).level === level).length;
-    return { level, count, pct: allPcts.length ? (count / allPcts.length) * 100 : 0 };
-  });
-
-  return {
-    rows: sorted,
-    ranked: ranked.length,
-    mean: means.length ? means.reduce((a, b) => a + b, 0) / means.length : null,
-    high: means.length ? Math.max(...means) : null,
-    low: means.length ? Math.min(...means) : null,
-    meetingRate: means.length ? (means.filter((m) => m >= MEETING_MARK).length / means.length) * 100 : null,
-    subjectStats,
-    distribution,
-  };
-}
-
-function autoRemark(band: Band | null): string {
-  if (!band) return "No marks have been recorded for this learner yet.";
-  switch (band.level) {
+export function autoRemark(level: Level | null): string {
+  switch (level) {
     case "Exceeding":
       return "Excellent performance. Keep up the consistent effort and continue to challenge yourself.";
     case "Meeting":
       return "Good work. With a little more practice in the weaker subjects you can reach the next level.";
     case "Approaching":
       return "A fair performance. More revision and regular practice are needed, especially in the weaker subjects.";
-    default:
+    case "Below":
       return "Performance is below expectation. Please meet the class teacher so a support plan can be agreed.";
+    default:
+      return "No marks have been recorded for this learner yet.";
   }
 }
 
 /* ------------------------------------------------------------------ */
-/* Files: PDF and Excel                                                */
+/* One list of sections drives the screen, the Excel file and the PDF  */
 /* ------------------------------------------------------------------ */
 
-type AutoTable = typeof import("jspdf-autotable").default;
+export type ColType = "text" | "int" | "pct" | "delta";
+export type Cell = string | number | null;
 
-interface CardData {
-  schoolName: string;
-  termLabel: string;
-  yearLabel: string;
-  classLabel: string;
-  examLabel: string;
-  learner: Learner;
-  rows: { subject: string; pct: number | null; code: string; level: string; points: number | null; classMean: number | null }[];
-  mean: number | null;
-  points: number;
-  code: string;
-  rank: number | null;
-  outOf: number;
-  comment: string;
-}
-
-const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
-
-function finalY(doc: jsPDF, fallback: number): number {
-  return (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? fallback;
-}
-
-function drawCard(doc: jsPDF, autoTable: AutoTable, c: CardData) {
-  doc.setFillColor(12, 31, 61);
-  doc.rect(0, 0, 210, 30, "F");
-  doc.setFillColor(185, 142, 47);
-  doc.rect(0, 30, 210, 1.5, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(17);
-  doc.text(c.schoolName, 14, 13);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.text(`Learner report card  ·  ${c.termLabel}`, 14, 21);
-
-  doc.setTextColor(26, 36, 51);
-  doc.setFontSize(10.5);
-  doc.setFont("helvetica", "bold");
-  doc.text(`Learner: ${c.learner.name}`, 14, 42);
-  doc.setFont("helvetica", "normal");
-  doc.text(`Adm. no: ${c.learner.admNo}`, 14, 48);
-  doc.text(`Class: ${c.classLabel}`, 110, 42);
-  doc.text(`Year: ${c.yearLabel}  ·  ${c.examLabel}`, 110, 48);
-
-  autoTable(doc, {
-    startY: 55,
-    head: [["Subject", "Score %", "Grade", "Level", "Points", "Class mean %"]],
-    body: c.rows.map((r) => [r.subject, fmt1(r.pct), r.code, r.level, r.points === null ? "–" : String(r.points), fmt1(r.classMean)]),
-    theme: "grid",
-    styles: { fontSize: 9.5, cellPadding: 2.5, textColor: [26, 36, 51] },
-    headStyles: { fillColor: [12, 31, 61], textColor: 255 },
-    columnStyles: { 1: { halign: "right" }, 4: { halign: "right" }, 5: { halign: "right" } },
-  });
-
-  let y = finalY(doc, 120) + 10;
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(10.5);
-  doc.text(
-    `Mean: ${fmt1(c.mean)}%    Total points: ${c.points}    Overall: ${c.code}    Position: ${c.rank ?? "–"} of ${c.outOf}`,
-    14,
-    y,
-  );
-
-  y += 12;
-  doc.text("Class teacher's comment", 14, y);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.text(doc.splitTextToSize(c.comment, 182), 14, y + 6);
-
-  doc.setDrawColor(150, 160, 175);
-  doc.line(14, 262, 80, 262);
-  doc.line(120, 262, 186, 262);
-  doc.setFontSize(9);
-  doc.setTextColor(98, 112, 132);
-  doc.text("Class teacher", 14, 267);
-  doc.text("Head of Institution", 120, 267);
-  doc.text("EE: Exceeding   ME: Meeting   AE: Approaching   BE: Below expectation", 14, 285);
-}
-
-async function loadPdf() {
-  const { jsPDF } = await import("jspdf");
-  const autoTable = (await import("jspdf-autotable")).default;
-  return { jsPDF, autoTable };
-}
-
-async function saveReportCards(cards: CardData[], filename: string) {
-  const { jsPDF, autoTable } = await loadPdf();
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
-  cards.forEach((c, i) => {
-    if (i > 0) doc.addPage();
-    drawCard(doc, autoTable, c);
-  });
-  doc.save(filename);
-}
-
-async function saveClassPdf(opts: {
+export interface Section {
+  key: string;
+  sheet: string; // Excel sheet name (sections with the same name share a sheet)
+  tab: "overview" | "analysis";
   title: string;
-  subtitle: string;
-  head: string[];
-  body: string[][];
-  filename: string;
-}) {
-  const { jsPDF, autoTable } = await loadPdf();
-  const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "landscape" });
-  doc.setFillColor(12, 31, 61);
-  doc.rect(0, 0, 297, 24, "F");
-  doc.setFillColor(185, 142, 47);
-  doc.rect(0, 24, 297, 1.2, "F");
-  doc.setTextColor(255, 255, 255);
-  doc.setFont("helvetica", "bold");
-  doc.setFontSize(15);
-  doc.text(opts.title, 12, 11);
-  doc.setFont("helvetica", "normal");
-  doc.setFontSize(10);
-  doc.text(opts.subtitle, 12, 18);
-  autoTable(doc, {
-    startY: 31,
-    head: [opts.head],
-    body: opts.body,
-    theme: "grid",
-    styles: { fontSize: 8.5, cellPadding: 2 },
-    headStyles: { fillColor: [12, 31, 61], textColor: 255 },
+  note?: string;
+  cols: { h: string; t: ColType }[];
+  rows: Cell[][];
+  bar?: { col: number; max: number }; // screen only: a small bar under the number
+  heat?: { from: number }; // screen only: shade the cells from this column on
+}
+
+export function buildSections(a: Analysis): Section[] {
+  const out: Section[] = [];
+  const s = a.summary;
+  const cmp = a.comparison;
+  const meeting = s.meetingMark;
+
+  out.push({
+    key: "summary",
+    sheet: "Summary",
+    tab: "overview",
+    title: "Summary",
+    cols: [
+      { h: "Measure", t: "text" },
+      { h: "Value", t: "text" },
+    ],
+    rows: [
+      ["Scope", a.meta.scope],
+      ["Year", a.meta.year],
+      ["Exam", a.meta.exam + (a.meta.examsUsed.length > 1 ? ` (${a.meta.examsUsed.join(", ")})` : "")],
+      ["Learners in scope", String(s.learners)],
+      ["Learners with results", String(s.withResults)],
+      ["Mean %", fmt1(s.mean)],
+      ["Median %", fmt1(s.median)],
+      ["Highest learner mean %", fmt1(s.high)],
+      ["Lowest learner mean %", fmt1(s.low)],
+      ["Spread (standard deviation)", fmt1(s.sd)],
+      [`Meeting expectations or above (${meeting}% and over)`, `${fmt1(s.meetingRate)}%`],
+      [`Learners below ${meeting}%`, String(s.belowMeeting)],
+      ["Absent (ABS) marks left out", String(s.absentMarks)],
+      ["Subjects", String(s.subjects)],
+      ["Classes", String(s.streams)],
+      ...(a.meta.includesPending ? [["Note", "Includes submitted results that are not yet approved."]] : []),
+    ],
   });
-  doc.save(opts.filename);
+
+  out.push({
+    key: "grades",
+    sheet: "Grades",
+    tab: "overview",
+    title: "General grade analysis",
+    note: "Each grade, all classes together. Means are the average of learners' subject averages.",
+    cols: [
+      { h: "Grade", t: "text" },
+      { h: "Classes", t: "int" },
+      { h: "Learners", t: "int" },
+      { h: "With results", t: "int" },
+      { h: "Mean %", t: "pct" },
+      { h: "Median %", t: "pct" },
+      { h: "Highest %", t: "pct" },
+      { h: "Lowest %", t: "pct" },
+      { h: "Meeting or above %", t: "pct" },
+      { h: "Top learner", t: "text" },
+    ],
+    rows: a.grades.map((g) => [
+      g.label, g.streams, g.learners, g.withResults, g.mean, g.median, g.high, g.low, g.meetingRate,
+      g.top ? `${g.top.name} (${g.top.className}, ${fmt1(g.top.mean)}%)` : null,
+    ]),
+    bar: { col: 4, max: 100 },
+  });
+
+  out.push({
+    key: "levels",
+    sheet: "Grades",
+    tab: "overview",
+    title: "Performance levels by grade",
+    note: "Share of all subject results at each level. EE Exceeding, ME Meeting, AE Approaching, BE Below expectation.",
+    cols: [{ h: "Grade", t: "text" }, ...LEVELS.map((l) => ({ h: `${l} %`, t: "pct" as ColType }))],
+    rows: a.grades.map((g) => [g.label, ...LEVELS.map((l) => g.levels[l])]),
+    heat: { from: 1 },
+  });
+
+  out.push({
+    key: "bands",
+    sheet: "Grades",
+    tab: "analysis",
+    title: "Grade distribution (EE1 to BE2)",
+    note: "Every subject result of every learner in scope, placed in its grade band.",
+    cols: [
+      { h: "Grade", t: "text" },
+      { h: "Level", t: "text" },
+      { h: "From %", t: "int" },
+      { h: "Results", t: "int" },
+      { h: "Share %", t: "pct" },
+    ],
+    rows: a.bands.map((b) => [b.code, b.level, b.min, b.count, b.pct]),
+    bar: { col: 4, max: Math.max(10, ...a.bands.map((b) => b.pct)) },
+  });
+
+  out.push({
+    key: "streams",
+    sheet: "Classes",
+    tab: "overview",
+    title: "Class (stream) performance",
+    note: "Ranked by mean. 'Pos in grade' ranks a class against the other classes of its own grade.",
+    cols: [
+      { h: "Pos", t: "int" },
+      { h: "Class", t: "text" },
+      { h: "Learners", t: "int" },
+      { h: "Mean %", t: "pct" },
+      { h: "Median %", t: "pct" },
+      { h: "Highest %", t: "pct" },
+      { h: "Lowest %", t: "pct" },
+      { h: "Meeting or above %", t: "pct" },
+      { h: "Pos in grade", t: "int" },
+      { h: "Strongest subject", t: "text" },
+      { h: "Weakest subject", t: "text" },
+      { h: "Top learner", t: "text" },
+    ],
+    rows: a.streams.map((r) => [
+      r.rank, r.label, r.learners, r.mean, r.median, r.high, r.low, r.meetingRate, r.rankInGrade, r.best, r.weakest,
+      r.top ? `${r.top.name} (${fmt1(r.top.mean)}%)` : null,
+    ]),
+    bar: { col: 3, max: 100 },
+  });
+
+  const gradeKeys = Array.from(new Set(a.subjects.flatMap((x) => Object.keys(x.byGrade)))).sort((x, y) => Number(x) - Number(y));
+  out.push({
+    key: "subjects",
+    sheet: "Subjects",
+    tab: "analysis",
+    title: "Subject analysis",
+    note: "Ranked by mean. Spread is the standard deviation: a high figure means results vary a lot between learners.",
+    cols: [
+      { h: "Pos", t: "int" },
+      { h: "Subject", t: "text" },
+      { h: "Results", t: "int" },
+      { h: "Mean %", t: "pct" },
+      { h: "Highest %", t: "pct" },
+      { h: "Lowest %", t: "pct" },
+      { h: "Spread", t: "pct" },
+      { h: "Meeting or above %", t: "pct" },
+      ...gradeKeys.map((g) => ({ h: `Grade ${g} mean %`, t: "pct" as ColType })),
+      { h: "Strongest class", t: "text" },
+      { h: "Weakest class", t: "text" },
+    ],
+    rows: a.subjects.map((x, i) => [
+      i + 1, x.name, x.count, x.mean, x.high, x.low, x.sd, x.meetingRate, ...gradeKeys.map((g) => x.byGrade[g] ?? null), x.bestStream, x.weakestStream,
+    ]),
+    bar: { col: 3, max: 100 },
+  });
+
+  if (a.subjectByStream.streams.length > 1) {
+    out.push({
+      key: "matrix",
+      sheet: "Classes",
+      tab: "analysis",
+      title: "Subject by class (mean %)",
+      note: "Darker cells are higher means. Read across to compare classes, down to compare subjects.",
+      cols: [{ h: "Subject", t: "text" }, ...a.subjectByStream.streams.map((c) => ({ h: c.label, t: "pct" as ColType }))],
+      rows: a.subjectByStream.rows.map((r) => [r.subject, ...r.means]),
+      heat: { from: 1 },
+    });
+  }
+
+  if (cmp && cmp.summary) {
+    const c = cmp.summary;
+    const label = `${cmp.current.name} compared with ${cmp.previous.name}`;
+    out.push({
+      key: "cmp-summary",
+      sheet: "Comparison",
+      tab: "analysis",
+      title: `Comparison with previous marks: ${label}`,
+      note: `Only the ${cmp.paired} learners with results in both exams are compared. A change of less than 1 point counts as steady.`,
+      cols: [
+        { h: "Measure", t: "text" },
+        { h: "Value", t: "text" },
+      ],
+      rows: [
+        [`Mean in ${cmp.previous.name} %`, fmt1(c.meanPrev)],
+        [`Mean in ${cmp.current.name} %`, fmt1(c.meanNow)],
+        ["Change in points", signed(c.change)],
+        ["Learners who improved", String(c.improved)],
+        ["Learners who declined", String(c.declined)],
+        ["Learners who stayed steady", String(c.steady)],
+      ],
+    });
+    const changeCols = (first: string, n = true): Section["cols"] => [
+      { h: first, t: "text" },
+      { h: `${cmp.previous.name} %`, t: "pct" },
+      { h: `${cmp.current.name} %`, t: "pct" },
+      { h: "Change", t: "delta" },
+      ...(n ? [{ h: "Learners", t: "int" as ColType }] : []),
+    ];
+    out.push({
+      key: "cmp-grades", sheet: "Comparison", tab: "analysis", title: "Change by grade", cols: changeCols("Grade"),
+      rows: cmp.grades.map((g) => [g.label, g.prev, g.now, g.change, g.n]),
+    });
+    out.push({
+      key: "cmp-streams", sheet: "Comparison", tab: "analysis", title: "Change by class", cols: changeCols("Class"),
+      rows: cmp.streams.map((g) => [g.label, g.prev, g.now, g.change, g.n]),
+    });
+    out.push({
+      key: "cmp-subjects", sheet: "Comparison", tab: "analysis", title: "Change by subject", cols: changeCols("Subject"),
+      rows: cmp.subjects.map((g) => [g.name, g.prev, g.now, g.change, g.n]),
+    });
+
+    const moverCols: Section["cols"] = [
+      { h: "#", t: "int" },
+      { h: "Adm. no", t: "text" },
+      { h: "Learner", t: "text" },
+      { h: "Class", t: "text" },
+      { h: `${cmp.previous.name} %`, t: "pct" },
+      { h: `${cmp.current.name} %`, t: "pct" },
+      { h: "Change", t: "delta" },
+      { h: "Grade", t: "text" },
+      { h: "Position", t: "text" },
+    ];
+    const moverRow = (m: Mover, i: number): Cell[] => [
+      i + 1, m.admNo, m.name, m.className, m.prev, m.now, m.change, `${m.prevCode} → ${m.nowCode}`, `${m.rankPrev ?? "–"} → ${m.rankNow ?? "–"}`,
+    ];
+    out.push({ key: "improved", sheet: "Most improved", tab: "analysis", title: "Most improved learners", cols: moverCols, rows: cmp.improved.map(moverRow) });
+    out.push({ key: "declined", sheet: "Most improved", tab: "analysis", title: "Biggest declines", cols: moverCols, rows: cmp.declined.map(moverRow) });
+  }
+
+  if (a.gender.length > 1) {
+    out.push({
+      key: "gender",
+      sheet: "Gender",
+      tab: "analysis",
+      title: "Performance by gender",
+      cols: [
+        { h: "Gender", t: "text" },
+        { h: "Learners", t: "int" },
+        { h: "With results", t: "int" },
+        { h: "Mean %", t: "pct" },
+        { h: "Meeting or above %", t: "pct" },
+        ...LEVELS.map((l) => ({ h: `${l} %`, t: "pct" as ColType })),
+      ],
+      rows: a.gender.map((g) => [g.gender, g.learners, g.withResults, g.mean, g.meetingRate, ...LEVELS.map((l) => g.levels[l])]),
+    });
+  }
+
+  const lineCols: Section["cols"] = [
+    { h: "Pos", t: "int" },
+    { h: "Adm. no", t: "text" },
+    { h: "Learner", t: "text" },
+    { h: "Class", t: "text" },
+    { h: "Mean %", t: "pct" },
+    { h: "Grade", t: "text" },
+    { h: "Strongest subject", t: "text" },
+    { h: "Weakest subject", t: "text" },
+    { h: `Subjects under ${meeting}%`, t: "int" },
+  ];
+  const lineRow = (l: LearnerLine): Cell[] => [l.rank, l.admNo, l.name, l.className, l.mean, l.code, l.best, l.weakest, l.belowCount];
+  out.push({ key: "top", sheet: "Learners", tab: "analysis", title: "Top 10 learners", cols: lineCols, rows: a.top.map(lineRow) });
+  out.push({
+    key: "support", sheet: "Learners", tab: "analysis", title: "Learners who need support",
+    note: "The 10 lowest means. Check the subjects column to see where the help is needed most.",
+    cols: lineCols, rows: a.support.map(lineRow),
+  });
+
+  return out;
+}
+
+export function formatCell(v: Cell, t: ColType): string {
+  if (v === null || v === undefined || v === "") return "–";
+  if (typeof v === "string") return v;
+  if (t === "int") return String(Math.round(v));
+  if (t === "delta") return signed(v);
+  if (t === "pct") return v.toFixed(1);
+  return String(v);
+}
+
+/* ------------------------------------------------------------------ */
+/* Excel (the PDF builders live in ./resultsPdf)                       */
+/* ------------------------------------------------------------------ */
+
+export async function saveAnalysisExcel(sections: Section[], filename: string) {
+  const XLSX = await import("xlsx");
+  const wb = XLSX.utils.book_new();
+
+  const sheets = new Map<string, Section[]>();
+  sections.forEach((s) => sheets.set(s.sheet, [...(sheets.get(s.sheet) ?? []), s]));
+
+  const FORMAT: Record<ColType, string | undefined> = { text: undefined, int: "0", pct: "0.0", delta: "+0.0;-0.0;0.0" };
+
+  sheets.forEach((list, name) => {
+    const aoa: Cell[][] = [];
+    const formats: { r: number; c: number; z: string }[] = [];
+    list.forEach((sec) => {
+      aoa.push([sec.title]);
+      if (sec.note) aoa.push([sec.note]);
+      aoa.push(sec.cols.map((c) => c.h));
+      sec.rows.forEach((row) => {
+        const r = aoa.length;
+        aoa.push(row);
+        row.forEach((v, c) => {
+          const z = FORMAT[sec.cols[c]?.t ?? "text"];
+          if (typeof v === "number" && z) formats.push({ r, c, z });
+        });
+      });
+      aoa.push([]);
+    });
+
+    const ws = XLSX.utils.aoa_to_sheet(aoa);
+    formats.forEach(({ r, c, z }) => {
+      const cell = ws[XLSX.utils.encode_cell({ r, c })];
+      if (cell) cell.z = z;
+    });
+    const width = Math.max(...aoa.map((r) => r.length), 1);
+    ws["!cols"] = Array.from({ length: width }, (_, c) => ({
+      wch: Math.min(34, Math.max(10, ...aoa.filter((r) => r.length > 1).map((r) => String(r[c] ?? "").length + 2))),
+    }));
+    XLSX.utils.book_append_sheet(wb, ws, name.slice(0, 31));
+  });
+
+  XLSX.writeFile(wb, filename);
 }
 
 /* ------------------------------------------------------------------ */
@@ -434,29 +615,109 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
 }
 
 /* ------------------------------------------------------------------ */
+/* Screen pieces (defined outside the page so they never remount)      */
+/* ------------------------------------------------------------------ */
+
+function SectionTable({ sec }: { sec: Section }) {
+  const nums = sec.heat ? sec.rows.flatMap((r) => r.slice(sec.heat!.from)).filter(isNum) : [];
+  const lo = nums.length ? Math.min(...nums) : 0;
+  const hi = nums.length ? Math.max(...nums) : 1;
+  const lead = sec.cols[0]?.t === "text" ? 0 : 1; // the name column (after a "Pos" or "#" column)
+
+  return (
+    <section className="ss-an-sec" aria-labelledby={`sec-${sec.key}`}>
+      <h4 id={`sec-${sec.key}`}>{sec.title}</h4>
+      {sec.note ? <p className="ss-note ss-an-note">{sec.note}</p> : null}
+      <div className="ss-mk-wrap" tabIndex={0} role="region" aria-label={sec.title}>
+        <table className="ss-table" style={{ marginTop: 0 }}>
+          <thead>
+            <tr>
+              {sec.cols.map((c, i) => (
+                <th key={i} scope="col" className={c.t === "text" ? undefined : "ss-num"}>
+                  {c.h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {sec.rows.length === 0 ? (
+              <tr>
+                <td colSpan={sec.cols.length} className="ss-empty" style={{ textAlign: "center", padding: 18 }}>
+                  Nothing to show yet.
+                </td>
+              </tr>
+            ) : (
+              sec.rows.map((row, ri) => (
+                <tr key={ri}>
+                  {row.map((v, ci) => {
+                    const t = sec.cols[ci]?.t ?? "text";
+                    const text = formatCell(v, t);
+                    const heat = sec.heat && ci >= sec.heat.from && isNum(v);
+                    const style = heat ? { background: `color-mix(in srgb, var(--ss-primary) ${Math.round(8 + ((v - lo) / Math.max(1, hi - lo)) * 42)}%, transparent)` } : undefined;
+                    const cls = [t === "text" ? "" : "ss-num", heat ? "ss-heat" : ""].filter(Boolean).join(" ") || undefined;
+                    return (
+                      <td key={ci} className={cls} style={style}>
+                        {t === "delta" && isNum(v) ? <span className={`ss-delta ${v >= 1 ? "up" : v <= -1 ? "down" : "flat"}`}>{text}</span> : ci === lead && t === "text" ? <strong>{text}</strong> : text}
+                        {sec.bar && sec.bar.col === ci && isNum(v) ? (
+                          <span className="ss-cellbar" aria-hidden="true">
+                            <i style={{ width: `${Math.max(0, Math.min(100, (v / sec.bar.max) * 100))}%` }} />
+                          </span>
+                        ) : null}
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  );
+}
+
+function Stat({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <span>{label}</span>
+      <b>{value}</b>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
 
-type Tab = "overview" | "results" | "analysis" | "cards";
+type Tab = "dashboard" | "overview" | "analysis" | "results" | "cards";
 
 const TABS: { key: Tab; label: string }[] = [
-  { key: "overview", label: "School overview" },
-  { key: "results", label: "Class results" },
+  { key: "dashboard", label: "Dashboard" },
+  { key: "overview", label: "Overview" },
   { key: "analysis", label: "Analysis" },
+  { key: "results", label: "Class results" },
   { key: "cards", label: "Report cards" },
 ];
 
-export default function ViewResults({
-  years = SAMPLE_YEARS,
-  schoolName = "Senior School",
-  termLabel = "Term 3, 2026",
-  userName = "Teacher",
-  theme = "light",
-}: ViewResultsProps) {
-  const [yearId, setYearId] = useState(years[0]?.id ?? "");
-  const [classId, setClassId] = useState(years[0]?.classes[0]?.id ?? "");
+export default function ViewResults({ schoolName = "Senior School", termLabel = "Term 3, 2026", userName = "Teacher", theme = "light" }: ViewResultsProps) {
+  const [options, setOptions] = useState<Options | null>(null);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
+
+  const [yearId, setYearId] = useState("");
+  const [grade, setGrade] = useState("all");
+  const [classId, setClassId] = useState("all");
   const [examId, setExamId] = useState("all");
-  const [tab, setTab] = useState<Tab>("overview");
+  const [compare, setCompare] = useState("auto");
+  const [pending, setPending] = useState(false);
+  const [tab, setTab] = useState<Tab>("dashboard");
+
+  const [analysis, setAnalysis] = useState<Analysis | null>(null);
+  const [analysisBusy, setAnalysisBusy] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
+
+  const [classData, setClassData] = useState<ClassData | null>(null);
+  const [classBusy, setClassBusy] = useState(false);
+  const [classError, setClassError] = useState<string | null>(null);
 
   const [query, setQuery] = useState("");
   const [learnerId, setLearnerId] = useState("");
@@ -466,99 +727,120 @@ export default function ViewResults({
   const [notice, setNotice] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  const year = years.find((y) => y.id === yearId);
-  const cls = year?.classes.find((c) => c.id === classId);
+  /* ----- load the filter options ----- */
+
+  useEffect(() => {
+    const ctl = new AbortController();
+    api<Options>("/results/options", ctl.signal)
+      .then((o) => {
+        setOptions(o);
+        const current = o.years.find((y) => y.id === o.currentYearId) ?? o.years[0];
+        if (current) setYearId(current.id);
+      })
+      .catch((e: Error) => {
+        if (e.name !== "AbortError") setOptionsError(e.message);
+      });
+    return () => ctl.abort();
+  }, []);
+
+  const year = options?.years.find((y) => y.id === yearId);
   const exams = year?.exams ?? [];
-  const examLabel = examId === "all" ? "All exams combined" : exams.find((e) => e.id === examId)?.name ?? "";
+  const classes = (options?.classes ?? []).filter((c) => grade === "all" || String(c.grade) === grade);
+  const canPending = options?.canIncludePending ?? false;
+  const usePending = canPending && pending;
 
-  const analysis = useMemo(() => (cls && year ? analyseClass(cls, year.exams, examId) : null), [cls, year, examId]);
+  const baseQuery = useMemo(() => {
+    const p = new URLSearchParams({ year_id: yearId, exam: examId });
+    if (usePending) p.set("include_pending", "1");
+    return p;
+  }, [yearId, examId, usePending]);
 
-  const overview = useMemo(() => {
-    if (!year) return { rows: [], schoolMean: null as number | null, learners: 0, meetingRate: null as number | null };
-    let sum = 0;
-    let count = 0;
-    let meeting = 0;
-    const rows = year.classes.map((c) => {
-      const a = analyseClass(c, year.exams, examId);
-      const means = a.rows.map((r) => r.mean).filter(isNum);
-      sum += means.reduce((x, y) => x + y, 0);
-      count += means.length;
-      meeting += means.filter((m) => m >= MEETING_MARK).length;
-      return { cls: c, a, top: a.rows.find((r) => r.rank === 1) };
-    });
-    return {
-      rows,
-      schoolMean: count ? sum / count : null,
-      learners: year.classes.reduce((n, c) => n + c.learners.length, 0),
-      meetingRate: count ? (meeting / count) * 100 : null,
-    };
-  }, [year, examId]);
+  /* ----- load the analysis whenever a filter changes ----- */
 
-  const activeRow = analysis?.rows.find((r) => r.learner.id === learnerId) ?? analysis?.rows[0];
+  useEffect(() => {
+    if (!yearId) return;
+    const ctl = new AbortController();
+    const p = new URLSearchParams(baseQuery);
+    if (grade !== "all") p.set("grade", grade);
+    if (classId !== "all") p.set("stream_id", classId);
+    p.set("compare", compare);
 
-  const visibleRows = useMemo(() => {
-    if (!analysis) return [];
-    const q = query.trim().toLowerCase();
-    return analysis.rows.filter((r) => !q || r.learner.name.toLowerCase().includes(q) || r.learner.admNo.toLowerCase().includes(q));
-  }, [analysis, query]);
+    setAnalysisBusy(true);
+    setAnalysisError(null);
+    api<Analysis>(`/results/analysis?${p.toString()}`, ctl.signal)
+      .then(setAnalysis)
+      .catch((e: Error) => {
+        if (e.name !== "AbortError") setAnalysisError(e.message);
+      })
+      .finally(() => {
+        if (!ctl.signal.aborted) setAnalysisBusy(false);
+      });
+    return () => ctl.abort();
+  }, [yearId, grade, classId, compare, baseQuery]);
+
+  /* ----- load one class when the class tabs need it ----- */
+
+  useEffect(() => {
+    if (!yearId || classId === "all" || (tab !== "results" && tab !== "cards")) return;
+    const ctl = new AbortController();
+    const p = new URLSearchParams(baseQuery);
+    p.set("stream_id", classId);
+
+    setClassBusy(true);
+    setClassError(null);
+    api<ClassData>(`/results/class?${p.toString()}`, ctl.signal)
+      .then(setClassData)
+      .catch((e: Error) => {
+        if (e.name !== "AbortError") setClassError(e.message);
+      })
+      .finally(() => {
+        if (!ctl.signal.aborted) setClassBusy(false);
+      });
+    return () => ctl.abort();
+  }, [yearId, classId, tab, baseQuery]);
 
   /* ----- selection ----- */
 
-  const pickYear = (id: string) => {
-    const y = years.find((x) => x.id === id);
-    setYearId(id);
-    setClassId(y?.classes[0]?.id ?? "");
-    setExamId("all");
-    setLearnerId("");
-    setQuery("");
+  const reset = () => {
     setNotice(null);
     setError(null);
+    setQuery("");
+    setLearnerId("");
   };
-
+  const pickYear = (id: string) => {
+    setYearId(id);
+    setExamId("all");
+    setCompare("auto");
+    reset();
+  };
+  const pickGrade = (g: string) => {
+    setGrade(g);
+    setClassId("all");
+    reset();
+  };
   const pickClass = (id: string) => {
     setClassId(id);
-    setLearnerId("");
-    setQuery("");
-    setNotice(null);
-    setError(null);
+    reset();
   };
 
-  const openClass = (id: string) => {
-    pickClass(id);
-    setTab("results");
-  };
+  /* ----- derived ----- */
 
-  /* ----- report card data ----- */
+  const sections = useMemo(() => (analysis ? buildSections(analysis) : []), [analysis]);
+  const hasData = !!analysis && analysis.summary.withResults > 0;
+  const needsClass = classId === "all";
+  const cls = classData && !needsClass ? classData : null;
 
-  const cardFor = (row: LearnerRow): CardData | null => {
-    if (!cls || !year || !analysis) return null;
-    return {
-      schoolName,
-      termLabel,
-      yearLabel: year.label,
-      classLabel: cls.label,
-      examLabel,
-      learner: row.learner,
-      rows: cls.subjects.map((s) => {
-        const p = row.pcts[s.id];
-        const g = p === null ? null : gradeFor(p);
-        return {
-          subject: s.name,
-          pct: p,
-          code: g?.code ?? "–",
-          level: g?.level ?? "–",
-          points: g?.points ?? null,
-          classMean: analysis.subjectStats.find((x) => x.subject.id === s.id)?.mean ?? null,
-        };
-      }),
-      mean: row.mean,
-      points: row.points,
-      code: row.band?.code ?? "–",
-      rank: row.rank,
-      outOf: analysis.ranked,
-      comment: comments[row.learner.id] ?? autoRemark(row.band),
-    };
-  };
+  const visibleLearners = useMemo(() => {
+    if (!cls) return [];
+    const q = query.trim().toLowerCase();
+    return cls.learners.filter((l) => !q || l.name.toLowerCase().includes(q) || l.admNo.toLowerCase().includes(q));
+  }, [cls, query]);
+
+  const activeLearner = cls?.learners.find((l) => String(l.id) === learnerId) ?? cls?.learners[0];
+  const bands = options?.bands ?? [];
+  const classLabel = options?.classes.find((c) => c.id === classId)?.label ?? "";
+  const examLabel = analysis?.meta.exam ?? "";
+  const base = `${slug(year?.label ?? "year")}-${slug(analysis?.meta.scope ?? "school")}-${slug(examLabel)}`;
 
   /* ----- downloads ----- */
 
@@ -576,32 +858,73 @@ export default function ViewResults({
     }
   };
 
-  const base = cls && year ? `${slug(year.label)}-${slug(cls.label)}-${slug(examLabel)}` : "results";
+  const downloadAnalysisExcel = () => {
+    if (!analysis) return;
+    void run(() => saveAnalysisExcel(sections, `results-analysis-${base}.xlsx`), "Analysis Excel file downloaded.");
+  };
+
+  const downloadAnalysisPdf = () => {
+    if (!analysis) return;
+    void run(
+      () => saveAnalysisPdf({ sections, charts: analysis, schoolName, termLabel, meta: analysis.meta, filename: `results-analysis-${base}.pdf` }),
+      "Analysis PDF downloaded.",
+    );
+  };
+
+  const cardFor = (l: ClassLearner): CardData | null => {
+    if (!cls || !year) return null;
+    return {
+      schoolName,
+      termLabel,
+      yearLabel: year.label,
+      classLabel,
+      examLabel,
+      learner: { name: l.name, admNo: l.admNo },
+      rows: cls.subjects.map((s) => {
+        const p = l.pcts[String(s.id)] ?? null;
+        const g = p === null || !bands.length ? null : gradeFor(p, bands);
+        return {
+          subject: s.name,
+          pct: p,
+          code: g?.code ?? "–",
+          level: g?.level ?? "–",
+          points: g?.points ?? null,
+          classMean: cls.subjectStats.find((x) => x.subjectId === s.id)?.mean ?? null,
+        };
+      }),
+      mean: l.mean,
+      points: l.points,
+      code: l.code ?? "–",
+      rank: l.rank,
+      outOf: cls.ranked,
+      comment: comments[String(l.id)] ?? autoRemark(l.level),
+    };
+  };
 
   const downloadOneCard = () => {
-    const card = activeRow ? cardFor(activeRow) : null;
+    const card = activeLearner ? cardFor(activeLearner) : null;
     if (!card) return;
     void run(() => saveReportCards([card], `report-card-${slug(card.learner.name)}-${base}.pdf`), `Report card for ${card.learner.name} downloaded.`);
   };
 
   const downloadAllCards = () => {
-    if (!analysis) return;
-    const cards = analysis.rows.map(cardFor).filter((c): c is CardData => c !== null);
+    if (!cls) return;
+    const cards = cls.learners.map(cardFor).filter((c): c is CardData => c !== null);
     void run(() => saveReportCards(cards, `report-cards-${base}.pdf`), `${cards.length} report cards downloaded in one PDF.`);
   };
 
   const classTable = () => {
-    if (!cls || !analysis) return { head: [] as string[], body: [] as string[][] };
+    if (!cls) return { head: [] as string[], body: [] as string[][] };
     return {
       head: ["Pos", "Adm. no", "Learner", ...cls.subjects.map((s) => `${s.name} %`), "Mean %", "Grade", "Points"],
-      body: analysis.rows.map((r) => [
-        r.rank === null ? "–" : String(r.rank),
-        r.learner.admNo,
-        r.learner.name,
-        ...cls.subjects.map((s) => fmt1(r.pcts[s.id])),
-        fmt1(r.mean),
-        r.band?.code ?? "–",
-        String(r.points),
+      body: cls.learners.map((l) => [
+        l.rank === null ? "–" : String(l.rank),
+        l.admNo,
+        l.name,
+        ...cls.subjects.map((s) => fmt1(l.pcts[String(s.id)])),
+        fmt1(l.mean),
+        l.code ?? "–",
+        String(l.points),
       ]),
     };
   };
@@ -610,8 +933,8 @@ export default function ViewResults({
     if (!cls || !year) return;
     const { head, body } = classTable();
     void run(
-      () => saveClassPdf({ title: `${schoolName} · Results analysis`, subtitle: `${year.label} · ${cls.label} · ${examLabel} · ${termLabel}`, head, body, filename: `results-${base}.pdf` }),
-      "Results PDF downloaded.",
+      () => saveClassPdf({ title: `${schoolName} · Class results`, subtitle: `${year.label} · ${classLabel} · ${examLabel} · ${termLabel}`, head, body, filename: `results-${base}.pdf` }),
+      "Class results PDF downloaded.",
     );
   };
 
@@ -624,17 +947,19 @@ export default function ViewResults({
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Results");
       XLSX.writeFile(wb, `results-${base}.xlsx`);
-    }, "Results Excel file downloaded.");
+    }, "Class results Excel file downloaded.");
   };
 
   /* ------------------------------------------------------------------ */
 
-  const needsClass = !cls || !analysis;
   const pickClassMessage = (
     <p className="ss-empty" style={{ margin: "24px 0 8px", textAlign: "center" }}>
       Choose a class above to see this view.
     </p>
   );
+
+  const s = analysis?.summary;
+  const cmp = analysis?.comparison ?? null;
 
   return (
     // tt-shell gives the shared TeacherSidebar its colours and the 260px + content layout.
@@ -657,9 +982,16 @@ export default function ViewResults({
           <div>
             <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600 }}>Results</h2>
             <p className="ss-note" style={{ marginTop: 6, maxWidth: "68ch" }}>
-              See results for the whole senior school, analyse a class, and download report cards as PDF. Only published results are shown here.
+              See how the whole school, a grade or a class performed, compare with earlier exams, and download the analysis as Excel or PDF. Only approved (published) results are
+              counted.
             </p>
           </div>
+
+          {optionsError ? (
+            <p className="ss-field-err" role="alert" style={{ margin: 0 }}>
+              {optionsError}
+            </p>
+          ) : null}
 
           {/* ---------- Filters ---------- */}
           <section className="ss-card ss-panel" aria-labelledby="vr-filter-title">
@@ -667,45 +999,92 @@ export default function ViewResults({
               <h3 id="vr-filter-title">Choose the results</h3>
               <span className="ss-count">{termLabel}</span>
             </header>
-            <div className="ss-mk-pick">
-              <label className="ss-lab">
-                Year
-                <select className="ss-input" value={yearId} onChange={(e) => pickYear(e.target.value)}>
-                  {years.map((y) => (
-                    <option key={y.id} value={y.id}>
-                      {y.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="ss-lab">
-                Class / Grade
-                <select className="ss-input" value={classId} onChange={(e) => pickClass(e.target.value)} disabled={!year}>
-                  <option value="">Select class</option>
-                  {year?.classes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="ss-lab">
-                Exam type
-                <select className="ss-input" value={examId} onChange={(e) => setExamId(e.target.value)} disabled={!year}>
-                  <option value="all">All exams combined</option>
-                  {exams.map((x) => (
-                    <option key={x.id} value={x.id}>
-                      {x.name} (out of {x.max})
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <p className="ss-note">
-              Scores are shown as percentages. "All exams combined" averages each learner's percentages across the exams, and absent (ABS) marks are left out.
-            </p>
+
+            {!options && !optionsError ? (
+              <p className="ss-muted" role="status" style={{ margin: "12px 0" }}>
+                Loading…
+              </p>
+            ) : (
+              <>
+                <div className="ss-mk-pick">
+                  <label className="ss-lab">
+                    Year
+                    <select className="ss-input" value={yearId} onChange={(e) => pickYear(e.target.value)}>
+                      {options?.years.map((y) => (
+                        <option key={y.id} value={y.id}>
+                          {y.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="ss-lab">
+                    Grade
+                    <select className="ss-input" value={grade} onChange={(e) => pickGrade(e.target.value)}>
+                      <option value="all">All grades</option>
+                      {options?.grades.map((g) => (
+                        <option key={g.level} value={String(g.level)}>
+                          {g.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="ss-lab">
+                    Class
+                    <select className="ss-input" value={classId} onChange={(e) => pickClass(e.target.value)}>
+                      <option value="all">All classes</option>
+                      {classes.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="ss-lab">
+                    Exam type
+                    <select className="ss-input" value={examId} onChange={(e) => setExamId(e.target.value)}>
+                      <option value="all">All exams combined</option>
+                      {exams.map((x) => (
+                        <option key={x.id} value={x.id}>
+                          {x.name} (out of {x.max})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="ss-lab">
+                    Compare with
+                    <select className="ss-input" value={compare} onChange={(e) => setCompare(e.target.value)}>
+                      <option value="auto">The exam before it</option>
+                      <option value="none">No comparison</option>
+                      {exams.map((x) => (
+                        <option key={x.id} value={x.id}>
+                          {x.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                {canPending ? (
+                  <label className="ss-check-row">
+                    <input type="checkbox" checked={pending} onChange={(e) => setPending(e.target.checked)} /> Also include submitted results that are not approved yet (preview for HOI and Deputy)
+                  </label>
+                ) : null}
+
+                <p className="ss-note">
+                  Scores are percentages. "All exams combined" averages each learner's percentages across the exams. Absent (ABS) marks are left out, not counted as zero.
+                </p>
+              </>
+            )}
           </section>
 
+          {analysisError ? (
+            <ul className="ss-alerts" style={{ margin: 0 }}>
+              <li className="tone-warn" role="alert">
+                <Icon name="warn" />
+                <span>{analysisError}</span>
+              </li>
+            </ul>
+          ) : null}
           {notice ? (
             <p className="ss-sent" role="status" style={{ margin: 0 }}>
               {notice}
@@ -721,10 +1100,10 @@ export default function ViewResults({
           ) : null}
 
           {/* ---------- Tabs and content ---------- */}
-          <section className="ss-card ss-panel" aria-labelledby="vr-title">
+          <section className="ss-card ss-panel" aria-labelledby="vr-title" aria-busy={analysisBusy}>
             <header>
-              <h3 id="vr-title">{year ? `${year.label} · ${cls ? cls.label : "All classes"} · ${examLabel}` : "Results"}</h3>
-              {analysis && tab !== "overview" ? <span className="ss-count">{cls?.learners.length} learners</span> : null}
+              <h3 id="vr-title">{analysis ? `${analysis.meta.year} · ${analysis.meta.scope} · ${analysis.meta.exam}` : "Results"}</h3>
+              {analysisBusy ? <span className="ss-count">Updating…</span> : s ? <span className="ss-count">{s.withResults} of {s.learners} learners</span> : null}
             </header>
 
             <div className="ss-pbody">
@@ -736,105 +1115,110 @@ export default function ViewResults({
                 ))}
               </div>
 
-              {/* ===== School overview ===== */}
-              {tab === "overview" ? (
-                <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-                  <div className="ss-mk-stats">
-                    <div>
-                      <span>Classes</span>
-                      <b>{overview.rows.length}</b>
-                    </div>
-                    <div>
-                      <span>Learners</span>
-                      <b>{overview.learners}</b>
-                    </div>
-                    <div>
-                      <span>School mean</span>
-                      <b>{fmt1(overview.schoolMean)}%</b>
-                    </div>
-                    <div>
-                      <span>Meeting or above</span>
-                      <b>{fmt1(overview.meetingRate)}%</b>
-                    </div>
-                  </div>
+              {analysis?.meta.includesPending ? (
+                <ul className="ss-alerts" style={{ margin: "0 0 14px" }}>
+                  <li className="tone-info">
+                    <Icon name="warn" />
+                    <span>This preview includes submitted results that have not been approved yet. Numbers can change.</span>
+                  </li>
+                </ul>
+              ) : null}
 
-                  <div className="ss-mk-wrap" tabIndex={0} role="region" aria-label="All classes">
-                    <table className="ss-table" style={{ marginTop: 0 }}>
-                      <thead>
-                        <tr>
-                          <th scope="col">Class / Grade</th>
-                          <th scope="col" className="ss-num">Learners</th>
-                          <th scope="col" className="ss-num">Mean %</th>
-                          <th scope="col" className="ss-num">Meeting or above</th>
-                          <th scope="col">Top learner</th>
-                          <th scope="col" />
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {overview.rows.length === 0 ? (
-                          <tr>
-                            <td colSpan={6} className="ss-empty" style={{ textAlign: "center", padding: 24 }}>
-                              No results for this year yet.
-                            </td>
-                          </tr>
-                        ) : (
-                          overview.rows.map(({ cls: c, a, top }) => (
-                            <tr key={c.id}>
-                              <td>
-                                <strong>{c.label}</strong>
-                              </td>
-                              <td className="ss-num">{c.learners.length}</td>
-                              <td className="ss-num">{fmt1(a.mean)}</td>
-                              <td className="ss-num">{fmt1(a.meetingRate)}%</td>
-                              <td>{top ? `${top.learner.name} (${fmt1(top.mean)}%)` : "–"}</td>
-                              <td className="ss-num">
-                                <button type="button" className="ss-btn ss-btn-sm" onClick={() => openClass(c.id)}>
-                                  Open
-                                </button>
-                              </td>
-                            </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+              {/* ===== Dashboard, Overview and Analysis ===== */}
+              {tab === "dashboard" || tab === "overview" || tab === "analysis" ? (
+                !analysis ? (
+                  <p className="ss-muted" role="status">
+                    {analysisBusy ? "Loading the results…" : "Choose a year to begin."}
+                  </p>
+                ) : !hasData ? (
+                  <p className="ss-empty" style={{ margin: "24px 0 8px", textAlign: "center" }}>
+                    {year && !year.hasResults
+                      ? `No results have been approved for ${year.label} yet.${canPending ? " Tick the preview box above to see submitted results." : ""}`
+                      : "No results match these choices."}
+                  </p>
+                ) : (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
+                    <div className="ss-an-bar">
+                      <p className="ss-muted" style={{ margin: 0 }}>
+                        Download the full analysis: charts, grades, classes, subjects, grade bands, comparison with the previous exam, most improved learners and more.
+                      </p>
+                      <div className="ss-btn-row">
+                        <button type="button" className="ss-btn" onClick={downloadAnalysisExcel} disabled={busy}>
+                          <Icon name="download" size={16} /> Excel
+                        </button>
+                        <button type="button" className="ss-btn ss-btn-primary" onClick={downloadAnalysisPdf} disabled={busy}>
+                          <Icon name="download" size={16} /> {busy ? "Working…" : "PDF"}
+                        </button>
+                      </div>
+                    </div>
+
+                    {tab === "dashboard" ? <ChartsDashboard a={analysis} /> : null}
+
+                    {tab === "overview" && s ? (
+                      <div className="ss-mk-stats">
+                        <Stat label="Learners" value={`${s.withResults} of ${s.learners}`} />
+                        <Stat label="Mean" value={`${fmt1(s.mean)}%`} />
+                        <Stat label="Meeting or above" value={`${fmt1(s.meetingRate)}%`} />
+                        <Stat label="Highest" value={`${fmt1(s.high)}%`} />
+                        <Stat label="Lowest" value={`${fmt1(s.low)}%`} />
+                        <Stat label={`Below ${s.meetingMark}%`} value={String(s.belowMeeting)} />
+                      </div>
+                    ) : null}
+
+                    {tab === "analysis" && cmp && cmp.summary ? (
+                      <div className="ss-mk-stats">
+                        <Stat label={`${cmp.previous.name} mean`} value={`${fmt1(cmp.summary.meanPrev)}%`} />
+                        <Stat label={`${cmp.current.name} mean`} value={`${fmt1(cmp.summary.meanNow)}%`} />
+                        <Stat label="Change" value={`${signed(cmp.summary.change)} pts`} />
+                        <Stat label="Improved" value={String(cmp.summary.improved)} />
+                        <Stat label="Declined" value={String(cmp.summary.declined)} />
+                        <Stat label="Steady" value={String(cmp.summary.steady)} />
+                      </div>
+                    ) : null}
+
+                    {tab === "analysis" && !cmp && compare !== "none" ? (
+                      <p className="ss-note" style={{ margin: 0 }}>
+                        There is no earlier exam with results to compare with yet. Once a second exam is approved, the comparison and most improved learners appear here.
+                      </p>
+                    ) : null}
+                    {tab === "analysis" && cmp && !cmp.summary ? (
+                      <p className="ss-note" style={{ margin: 0 }}>
+                        {cmp.current.name} and {cmp.previous.name} have no learners in common yet, so they cannot be compared.
+                      </p>
+                    ) : null}
+
+                    {sections
+                      .filter((sec) => sec.tab === tab && !(tab === "overview" && sec.key === "summary"))
+                      .map((sec) => (
+                        <SectionTable key={sec.key} sec={sec} />
+                      ))}
                   </div>
-                </div>
+                )
               ) : null}
 
               {/* ===== Class results ===== */}
               {tab === "results" ? (
                 needsClass ? (
                   pickClassMessage
+                ) : classError ? (
+                  <p className="ss-field-err" role="alert">
+                    {classError}
+                  </p>
+                ) : !cls ? (
+                  <p className="ss-muted" role="status">
+                    {classBusy ? "Loading the class…" : ""}
+                  </p>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                     <div className="ss-mk-stats">
-                      <div>
-                        <span>Class mean</span>
-                        <b>{fmt1(analysis.mean)}%</b>
-                      </div>
-                      <div>
-                        <span>Highest</span>
-                        <b>{fmt1(analysis.high)}%</b>
-                      </div>
-                      <div>
-                        <span>Lowest</span>
-                        <b>{fmt1(analysis.low)}%</b>
-                      </div>
-                      <div>
-                        <span>Meeting or above</span>
-                        <b>{fmt1(analysis.meetingRate)}%</b>
-                      </div>
+                      <Stat label="Class mean" value={`${fmt1(cls.summary.mean)}%`} />
+                      <Stat label="Highest" value={`${fmt1(cls.summary.high)}%`} />
+                      <Stat label="Lowest" value={`${fmt1(cls.summary.low)}%`} />
+                      <Stat label="Meeting or above" value={`${fmt1(cls.summary.meetingRate)}%`} />
                     </div>
 
                     <div className="ss-toolbar" style={{ margin: 0 }}>
-                      <input
-                        className="ss-input ss-input-auto"
-                        type="search"
-                        placeholder="Search name or admission number"
-                        aria-label="Search learners"
-                        value={query}
-                        onChange={(e) => setQuery(e.target.value)}
-                      />
+                      <input className="ss-input ss-input-auto" type="search" placeholder="Search name or admission number" aria-label="Search learners" value={query} onChange={(e) => setQuery(e.target.value)} />
                       <div className="ss-btn-row">
                         <button type="button" className="ss-btn" onClick={downloadClassExcel} disabled={busy}>
                           <Icon name="download" size={16} /> Excel
@@ -852,9 +1236,9 @@ export default function ViewResults({
                             <th scope="col">Pos</th>
                             <th scope="col">Adm. no</th>
                             <th scope="col">Learner</th>
-                            {cls.subjects.map((s) => (
-                              <th key={s.id} scope="col" className="ss-num">
-                                {s.name}
+                            {cls.subjects.map((x) => (
+                              <th key={x.id} scope="col" className="ss-num">
+                                {x.name}
                               </th>
                             ))}
                             <th scope="col" className="ss-num">Mean %</th>
@@ -863,32 +1247,32 @@ export default function ViewResults({
                           </tr>
                         </thead>
                         <tbody>
-                          {visibleRows.length === 0 ? (
+                          {visibleLearners.length === 0 ? (
                             <tr>
                               <td colSpan={cls.subjects.length + 6} className="ss-empty" style={{ textAlign: "center", padding: 24 }}>
-                                No learners match your search.
+                                {cls.learners.length === 0 ? "There are no learners in this class." : "No learners match your search."}
                               </td>
                             </tr>
                           ) : (
-                            visibleRows.map((r) => (
-                              <tr key={r.learner.id}>
+                            visibleLearners.map((l) => (
+                              <tr key={l.id}>
                                 <td>
-                                  <span className={`ss-vr-pos${r.rank !== null && r.rank <= 3 ? " top" : ""}`}>{r.rank ?? "–"}</span>
+                                  <span className={`ss-vr-pos${l.rank !== null && l.rank <= 3 ? " top" : ""}`}>{l.rank ?? "–"}</span>
                                 </td>
-                                <td>{r.learner.admNo}</td>
+                                <td>{l.admNo}</td>
                                 <td>
-                                  <strong>{r.learner.name}</strong>
+                                  <strong>{l.name}</strong>
                                 </td>
-                                {cls.subjects.map((s) => (
-                                  <td key={s.id} className="ss-num">
-                                    {fmt1(r.pcts[s.id])}
+                                {cls.subjects.map((x) => (
+                                  <td key={x.id} className="ss-num">
+                                    {fmt1(l.pcts[String(x.id)])}
                                   </td>
                                 ))}
                                 <td className="ss-num">
-                                  <strong>{fmt1(r.mean)}</strong>
+                                  <strong>{fmt1(l.mean)}</strong>
                                 </td>
-                                <td>{r.band ? <span className={levelTag(r.band.level)}>{r.band.code}</span> : "–"}</td>
-                                <td className="ss-num">{r.points}</td>
+                                <td>{l.code ? <span className={levelTag(l.level)}>{l.code}</span> : "–"}</td>
+                                <td className="ss-num">{l.points}</td>
                               </tr>
                             ))
                           )}
@@ -899,120 +1283,25 @@ export default function ViewResults({
                 )
               ) : null}
 
-              {/* ===== Analysis ===== */}
-              {tab === "analysis" ? (
-                needsClass ? (
-                  pickClassMessage
-                ) : (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-                    <div>
-                      <strong style={{ display: "block", marginBottom: 8, fontWeight: 600 }}>Subject performance</strong>
-                      <div className="ss-mk-wrap" tabIndex={0} role="region" aria-label="Subject performance">
-                        <table className="ss-table" style={{ marginTop: 0 }}>
-                          <thead>
-                            <tr>
-                              <th scope="col">Subject</th>
-                              <th scope="col">Mean</th>
-                              <th scope="col" className="ss-num">Mean %</th>
-                              <th scope="col" className="ss-num">Highest</th>
-                              <th scope="col" className="ss-num">Lowest</th>
-                              <th scope="col" className="ss-num">Meeting or above</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {analysis.subjectStats.map((s) => (
-                              <tr key={s.subject.id}>
-                                <td>
-                                  <strong>{s.subject.name}</strong>
-                                </td>
-                                <td style={{ minWidth: 120 }}>
-                                  <div className="ss-bar sm">
-                                    <i style={{ width: `${Math.min(100, s.mean ?? 0)}%` }} />
-                                  </div>
-                                </td>
-                                <td className="ss-num">{fmt1(s.mean)}</td>
-                                <td className="ss-num">{fmt1(s.high)}</td>
-                                <td className="ss-num">{fmt1(s.low)}</td>
-                                <td className="ss-num">{fmt1(s.meetingRate)}%</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-
-                    <div>
-                      <strong style={{ display: "block", fontWeight: 600 }}>Performance levels</strong>
-                      <p className="ss-muted" style={{ margin: "2px 0 0" }}>
-                        Share of all subject results in each level.
-                      </p>
-                      <div className="ss-results">
-                        {analysis.distribution.map((d) => (
-                          <div className="ss-result" key={d.level}>
-                            <span className="ss-result-subject">{d.level}</span>
-                            <div className="ss-bar">
-                              <i className={d.level === "Below" || d.level === "Approaching" ? "" : "gold"} style={{ width: `${d.pct}%` }} />
-                            </div>
-                            <span className="ss-result-score">{d.count}</span>
-                            <span className="ss-result-change flat">{fmt1(d.pct)}%</span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div className="ss-two">
-                      <div>
-                        <strong style={{ display: "block", fontWeight: 600 }}>Top performers</strong>
-                        <ul className="ss-list" style={{ marginTop: 6 }}>
-                          {analysis.rows.filter((r) => r.rank !== null).slice(0, 5).map((r) => (
-                            <li key={r.learner.id}>
-                              <span className={`ss-vr-pos${(r.rank ?? 9) <= 3 ? " top" : ""}`}>{r.rank}</span>
-                              <div>
-                                <strong>{r.learner.name}</strong>
-                                <small>Adm. {r.learner.admNo}</small>
-                              </div>
-                              <span className="ss-tag ok">{fmt1(r.mean)}%</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                      <div>
-                        <strong style={{ display: "block", fontWeight: 600 }}>Needs support</strong>
-                        <ul className="ss-list" style={{ marginTop: 6 }}>
-                          {[...analysis.rows.filter((r) => r.rank !== null)].reverse().slice(0, 5).map((r) => (
-                            <li key={r.learner.id}>
-                              <span className="ss-vr-pos">{r.rank}</span>
-                              <div>
-                                <strong>{r.learner.name}</strong>
-                                <small>Adm. {r.learner.admNo}</small>
-                              </div>
-                              <span className={r.band ? levelTag(r.band.level) : "ss-tag"}>{fmt1(r.mean)}%</span>
-                            </li>
-                          ))}
-                        </ul>
-                      </div>
-                    </div>
-
-                    <div className="ss-btn-row">
-                      <button type="button" className="ss-btn" onClick={downloadClassPdf} disabled={busy}>
-                        <Icon name="download" size={16} /> Download analysis as PDF
-                      </button>
-                    </div>
-                  </div>
-                )
-              ) : null}
-
               {/* ===== Report cards ===== */}
               {tab === "cards" ? (
-                needsClass || !activeRow ? (
+                needsClass ? (
                   pickClassMessage
+                ) : classError ? (
+                  <p className="ss-field-err" role="alert">
+                    {classError}
+                  </p>
+                ) : !cls || !activeLearner ? (
+                  <p className="ss-muted" role="status">
+                    {classBusy ? "Loading the class…" : "There are no learners in this class."}
+                  </p>
                 ) : (
                   <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                     <div className="ss-toolbar" style={{ margin: 0 }}>
-                      <select className="ss-input ss-input-auto" aria-label="Learner" value={activeRow.learner.id} onChange={(e) => setLearnerId(e.target.value)}>
-                        {analysis.rows.map((r) => (
-                          <option key={r.learner.id} value={r.learner.id}>
-                            {r.learner.name} ({r.learner.admNo})
+                      <select className="ss-input ss-input-auto" aria-label="Learner" value={String(activeLearner.id)} onChange={(e) => setLearnerId(e.target.value)}>
+                        {cls.learners.map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.name} ({l.admNo})
                           </option>
                         ))}
                       </select>
@@ -1021,12 +1310,12 @@ export default function ViewResults({
                           <Icon name="download" size={16} /> This report card (PDF)
                         </button>
                         <button type="button" className="ss-btn ss-btn-primary" onClick={downloadAllCards} disabled={busy}>
-                          {busy ? "Working…" : `All ${analysis.rows.length} report cards (PDF)`}
+                          {busy ? "Working…" : `All ${cls.learners.length} report cards (PDF)`}
                         </button>
                       </div>
                     </div>
 
-                    <article className="ss-vr-card" aria-label={`Report card for ${activeRow.learner.name}`}>
+                    <article className="ss-vr-card" aria-label={`Report card for ${activeLearner.name}`}>
                       <div className="ss-vr-card-head">
                         <h4>{schoolName}</h4>
                         <p>Learner report card · {termLabel}</p>
@@ -1034,15 +1323,15 @@ export default function ViewResults({
                       <div className="ss-vr-meta">
                         <div>
                           <span>Learner</span>
-                          <b>{activeRow.learner.name}</b>
+                          <b>{activeLearner.name}</b>
                         </div>
                         <div>
                           <span>Adm. no</span>
-                          <b>{activeRow.learner.admNo}</b>
+                          <b>{activeLearner.admNo}</b>
                         </div>
                         <div>
                           <span>Class</span>
-                          <b>{cls.label}</b>
+                          <b>{classLabel}</b>
                         </div>
                         <div>
                           <span>Year · Exam</span>
@@ -1066,19 +1355,19 @@ export default function ViewResults({
                               </tr>
                             </thead>
                             <tbody>
-                              {cls.subjects.map((s) => {
-                                const p = activeRow.pcts[s.id];
-                                const g = p === null ? null : gradeFor(p);
+                              {cls.subjects.map((x) => {
+                                const p = activeLearner.pcts[String(x.id)] ?? null;
+                                const g = p === null || !bands.length ? null : gradeFor(p, bands);
                                 return (
-                                  <tr key={s.id}>
+                                  <tr key={x.id}>
                                     <td>
-                                      <strong>{s.name}</strong>
+                                      <strong>{x.name}</strong>
                                     </td>
                                     <td className="ss-num">{fmt1(p)}</td>
                                     <td>{g ? <span className={levelTag(g.level)}>{g.code}</span> : "–"}</td>
                                     <td>{g?.level ?? "–"}</td>
                                     <td className="ss-num">{g?.points ?? "–"}</td>
-                                    <td className="ss-num">{fmt1(analysis.subjectStats.find((x) => x.subject.id === s.id)?.mean)}</td>
+                                    <td className="ss-num">{fmt1(cls.subjectStats.find((st) => st.subjectId === x.id)?.mean)}</td>
                                   </tr>
                                 );
                               })}
@@ -1087,24 +1376,10 @@ export default function ViewResults({
                         </div>
 
                         <div className="ss-mk-stats" style={{ marginTop: 14 }}>
-                          <div>
-                            <span>Mean</span>
-                            <b>{fmt1(activeRow.mean)}%</b>
-                          </div>
-                          <div>
-                            <span>Total points</span>
-                            <b>{activeRow.points}</b>
-                          </div>
-                          <div>
-                            <span>Overall grade</span>
-                            <b>{activeRow.band?.code ?? "–"}</b>
-                          </div>
-                          <div>
-                            <span>Position</span>
-                            <b>
-                              {activeRow.rank ?? "–"} of {analysis.ranked}
-                            </b>
-                          </div>
+                          <Stat label="Mean" value={`${fmt1(activeLearner.mean)}%`} />
+                          <Stat label="Total points" value={String(activeLearner.points)} />
+                          <Stat label="Overall grade" value={activeLearner.code ?? "–"} />
+                          <Stat label="Position" value={`${activeLearner.rank ?? "–"} of ${cls.ranked}`} />
                         </div>
 
                         <label className="ss-lab" style={{ marginTop: 14 }}>
@@ -1112,8 +1387,8 @@ export default function ViewResults({
                           <textarea
                             className="ss-input"
                             rows={3}
-                            value={comments[activeRow.learner.id] ?? autoRemark(activeRow.band)}
-                            onChange={(e) => setComments((c) => ({ ...c, [activeRow.learner.id]: e.target.value }))}
+                            value={comments[String(activeLearner.id)] ?? autoRemark(activeLearner.level)}
+                            onChange={(e) => setComments((c) => ({ ...c, [String(activeLearner.id)]: e.target.value }))}
                           />
                         </label>
 

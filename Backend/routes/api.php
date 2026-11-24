@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\LearnerController;
 use App\Http\Controllers\LearnerPortalController;
 use App\Http\Controllers\MarksController;
+use App\Http\Controllers\ResultsController;
 use App\Http\Controllers\TeacherController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -36,4 +37,12 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/exam-types',        [MarksController::class, 'storeExamType']);
     Route::delete('/exam-types/{id}', [MarksController::class, 'destroyExamType']);
+
+    // Results and analysis (HOI, Deputy and Teacher; the controller checks the role)
+    Route::get('/results/options',  [ResultsController::class, 'options']);
+    Route::get('/results/analysis', [ResultsController::class, 'analysis']);
+    Route::get('/results/class',    [ResultsController::class, 'classResults']);
+
+    // HOI or Deputy approves (publishes) or returns a submitted marks sheet
+    Route::post('/marks/review', [ResultsController::class, 'review']);
 });

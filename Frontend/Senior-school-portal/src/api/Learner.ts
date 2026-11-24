@@ -1,15 +1,14 @@
-// Put this at src/api/learners.ts
-// Adjust the import path below to wherever RegisterLearner.tsx lives in your project.
+// src/api/Learner.ts  (the file RegisterLearner.tsx imports from "../api/Learner")
 import type { LearnerForm } from "../Hoi/RegisterLearner";
+import { apiUrl, authHeaders, getToken } from "./authApi";
 
-// Vite projects read VITE_API_URL from .env; the fallback is `php artisan serve`.
-const API = (import.meta as any).env?.VITE_API_URL ?? "http://127.0.0.1:8000/api";
-
+/** Thrown when the server answers with an error. RegisterLearner checks status 401, 403, 422 and 5xx. */
 export class ApiError extends Error {
   status: number;
   errors: Record<string, string[]>;
   constructor(message: string, status: number, errors: Record<string, string[]> = {}) {
     super(message);
+    this.name = "ApiError";
     this.status = status;
     this.errors = errors;
   }
@@ -23,6 +22,9 @@ const SIMPLE_FIELDS = [
 ] as const;
 
 export async function registerLearner(form: LearnerForm) {
+  // No stored token (or it has expired): stop here instead of sending a request that is sure to fail.
+  if (!getToken()) throw new ApiError("Your session has ended. Please sign in again.", 401);
+
   const fd = new FormData();
 
   SIMPLE_FIELDS.forEach((k) => fd.append(k, String(form[k] ?? "")));
@@ -39,10 +41,11 @@ export async function registerLearner(form: LearnerForm) {
 
   if (form.photo) fd.append("photo", form.photo);
 
+  // authHeaders() adds Accept and the Bearer token.
   // Do not set Content-Type: the browser adds the multipart boundary itself.
-  const res = await fetch(`${API}/learners`, {
+  const res = await fetch(apiUrl("/learners"), {
     method: "POST",
-    headers: { Accept: "application/json" },
+    headers: authHeaders(),
     body: fd,
   });
 
