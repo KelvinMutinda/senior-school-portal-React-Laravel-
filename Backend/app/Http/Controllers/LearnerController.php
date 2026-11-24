@@ -87,10 +87,7 @@ class LearnerController extends Controller
                     'registered_by' => $request->user()?->id,
                 ]);
 
-                // Login account: learners sign in with their admission number and the
-                // default password from .env (LEARNER_DEFAULT_PASSWORD). They must
-                // change it at first login. If the default is missing this throws,
-                // and the whole registration is rolled back.
+              
                 $user = User::registerLearner(
                     ['name' => trim("{$d['firstName']} {$d['surname']}")],
                     $d['admissionNo']

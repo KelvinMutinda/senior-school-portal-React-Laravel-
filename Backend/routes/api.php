@@ -2,21 +2,18 @@
 
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\LearnerController;
+use App\Http\Controllers\LearnerPortalController;
+use App\Http\Controllers\MarksController;
 use App\Http\Controllers\TeacherController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\LearnerPortalController;
 
-    Route::get('/learner/dashboard', [LearnerPortalController::class, 'dashboard']);
-
-// Sign in
+// Sign in (public)
 Route::post('/login', [LoginController::class, 'login']);
 
-Route::get('/user', function (Request $request) {
-    return $request->user();
-})->middleware('auth:sanctum');
-
 Route::middleware('auth:sanctum')->group(function () {
+    Route::get('/user', fn (Request $request) => $request->user());
+
     // Sign out
     Route::post('/logout', [LoginController::class, 'logout']);
 
@@ -25,6 +22,18 @@ Route::middleware('auth:sanctum')->group(function () {
 
     Route::post('/teachers', [TeacherController::class, 'store']);
 
-    // Registration now needs a signed-in user, so registered_by gets filled in.
+    // Registration needs a signed-in user, so registered_by gets filled in.
     Route::post('/learners', [LearnerController::class, 'store']);
+
+    // Learner portal
+    Route::get('/learner/dashboard', [LearnerPortalController::class, 'dashboard']);
+
+    // Marks entry (the controller checks the role: teacher, Deputy or HOI)
+    Route::get('/marks/options', [MarksController::class, 'options']);
+    Route::get('/marks/sheet',   [MarksController::class, 'sheet']);
+    Route::post('/marks/draft',  [MarksController::class, 'saveDraft']);
+    Route::post('/marks/submit', [MarksController::class, 'submit']);
+
+    Route::post('/exam-types',        [MarksController::class, 'storeExamType']);
+    Route::delete('/exam-types/{id}', [MarksController::class, 'destroyExamType']);
 });

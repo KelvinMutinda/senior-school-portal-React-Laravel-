@@ -8,13 +8,13 @@ use App\Http\Controllers\Controller;
 
 use App\Http\Resources\TeacherResource;
 use App\Models\Department;
-use App\Models\Grade;
 use App\Models\StaffProfile;
 use App\Models\Stream;
 use App\Models\Subject;
 use App\Models\User;
 use App\Notifications\TeacherAccountCreated;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
@@ -123,9 +123,8 @@ class TeacherController extends Controller
                     'phone'        => $data['kin_phone'],
                 ]);
 
-                // 7. Eligibility: subjects and grades
-                $profile->subjects()->sync(Subject::whereIn('name', $data['teaching_subjects'])->pluck('id'));
-                $profile->grades()->sync(Grade::whereIn('name', $data['grades'])->pluck('id')); // ADJUST: grades column holding "10", "11", "12"
+                // 7. Teaching assignments: which subject in which grade and stream, for the current year
+                $this->syncTeachingAssignments($profile, $data['assignments']);
 
                 // 8. Head of department / class teacher
                 if ($profile->is_hod) {
@@ -161,7 +160,7 @@ class TeacherController extends Controller
 
         return (new TeacherResource($profile))
             ->additional([
-                'message'         => "{$profile->full_name} has been registered.",
+                'message'          => "{$profile->full_name} has been registered.",
                 'login_email_sent' => $emailSent,
             ])
             ->response()
@@ -169,17 +168,82 @@ class TeacherController extends Controller
     }
 
     /**
-     * ADJUST: assumes streams(grade_id, name, class_teacher_id) and grades.name = "10".
+     * All streams keyed by class code, e.g. "10B" => Stream.
+     * Only the digits of the grade name are used, so "Grade 10", "Form 10" and "10" all give "10".
+     *
+     * @return Collection<string, Stream>
+     */
+    private function streamsByCode(): Collection
+    {
+        return Stream::with('grade:id,name')
+            ->get()
+            ->filter(fn ($s) => $s->grade !== null)
+            ->keyBy(fn ($s) => preg_replace('/\D/', '', $s->grade->name) . strtoupper($s->name));
+    }
+
+    /**
+     * Saves one teaching_assignments row per subject and class, e.g. Physics + 10A,
+     * for the current academic year (academic_years.is_current = 1).
+     * Also keeps the older subjects() and grades() pivots in step, so existing screens keep working.
+     *
+     * @param array<int, array{subject: string, classes: array<int, string>}> $assignments
+     */
+    private function syncTeachingAssignments(StaffProfile $profile, array $assignments): void
+    {
+        $yearId = DB::table('academic_years')->where('is_current', true)->value('id');
+
+        if (! $yearId) {
+            throw ValidationException::withMessages([
+                'assignments' => 'No current academic year is set. Mark one academic year as current first.',
+            ]);
+        }
+
+        $subjects = Subject::whereIn('name', collect($assignments)->pluck('subject'))->get()->keyBy('name');
+        $streams  = $this->streamsByCode();
+
+        $now      = now();
+        $rows     = [];
+        $gradeIds = [];
+
+        foreach ($assignments as $assignment) {
+            $subject = $subjects->get($assignment['subject']);
+
+            if (! $subject) {
+                throw ValidationException::withMessages(['assignments' => "Unknown subject: {$assignment['subject']}."]);
+            }
+
+            foreach (array_unique($assignment['classes']) as $code) {
+                $stream = $streams->get($code);
+
+                if (! $stream) {
+                    throw ValidationException::withMessages(['assignments' => "Grade {$code} does not exist."]);
+                }
+
+                $rows[] = [
+                    'staff_profile_id' => $profile->id,
+                    'subject_id'       => $subject->id,
+                    'stream_id'        => $stream->id,
+                    'academic_year_id' => $yearId,
+                    'created_at'       => $now,
+                    'updated_at'       => $now,
+                ];
+                $gradeIds[] = $stream->grade_id;
+            }
+        }
+
+        DB::table('teaching_assignments')->insert($rows);
+
+        $profile->subjects()->sync(collect($rows)->pluck('subject_id')->unique()->values());
+        $profile->grades()->sync(collect($gradeIds)->unique()->values());
+    }
+
+    /**
+     * Assumes streams(grade_id, name, class_teacher_id).
      * If class teachers are stored per academic year, create that row here instead.
      */
     private function assignClassTeacher(StaffProfile $profile, string $class): void
     {
-        $gradeName  = substr($class, 0, -1);
-        $streamName = substr($class, -1);
-
-        $stream = Stream::where('name', $streamName)
-            ->whereHas('grade', fn ($q) => $q->where('name', $gradeName))
-            ->first();
+        $stream = $this->streamsByCode()->get($class);
 
         if (! $stream) {
             throw ValidationException::withMessages(['class_teacher_of' => "Grade {$class} does not exist."]);

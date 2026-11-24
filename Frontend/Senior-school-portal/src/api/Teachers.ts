@@ -1,6 +1,5 @@
-import type { TeacherForm } from "../Hoi/RegisterTeacher"; 
-
-const API_URL: string = import.meta.env.VITE_API_URL ?? "http://localhost:8000/api"; 
+import type { TeacherForm } from "../Hoi/RegisterTeacher";
+import { apiUrl, authHeaders } from "./authApi";
 
 export interface RegisterTeacherResult {
   message: string;
@@ -28,6 +27,15 @@ function buildFormData(form: TeacherForm): FormData {
     const value = form[k];
     const key = toSnake(k);
 
+    // Per-subject classes, sent as assignments[0][subject] and assignments[0][classes][]
+    if (k === "assignments") {
+      form.assignments.forEach((a, i) => {
+        fd.append(`assignments[${i}][subject]`, a.subject);
+        a.classes.forEach((c) => fd.append(`assignments[${i}][classes][]`, c));
+      });
+      return;
+    }
+
     if (value === null || value === "") return;
 
     if (k === "certificates") {
@@ -47,15 +55,11 @@ function buildFormData(form: TeacherForm): FormData {
 }
 
 export async function registerTeacher(form: TeacherForm): Promise<RegisterTeacherResult> {
-  const token = localStorage.getItem("token"); 
-
-  const res = await fetch(`${API_URL}/teachers`, {
+  // authHeaders() reads the token the login saved ("portal.token") and sets Accept.
+  // Do not set Content-Type here: the browser adds it, with the boundary, for FormData.
+  const res = await fetch(apiUrl("/teachers"), {
     method: "POST",
-    headers: {
-      Accept: "application/json", 
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-     
-    },
+    headers: authHeaders(),
     body: buildFormData(form),
   });
 
@@ -64,7 +68,8 @@ export async function registerTeacher(form: TeacherForm): Promise<RegisterTeache
   if (res.status === 422) {
     const errors: Record<string, string> = {};
     Object.entries((body.errors ?? {}) as Record<string, string[]>).forEach(([field, msgs]) => {
-   
+      // "teaching_subjects.0" -> "teachingSubjects". Keys like "assignments.0.classes" are
+      // folded into "assignments" by the form's own mapServerErrors().
       const key = toCamel(field.replace(/\.\d+$/, ""));
       if (!errors[key]) errors[key] = msgs[0];
     });

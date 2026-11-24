@@ -1,10 +1,16 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { DashboardLayout } from "./HoiDashboard";
 import { toast } from "../components/Toast";
-import { registerTeacher, ApiValidationError } from "../api/teachers";
+import { registerTeacher, ApiValidationError } from "../api/Teachers";
 
 export type Gender = "Female" | "Male" | "";
 export type EmploymentType = "TSC Permanent" | "TSC Contract" | "BOM Employed" | "Intern / Attachment" | "";
+
+/** One subject and the exact classes it is taught in, e.g. { subject: "Physics", classes: ["10A", "10B", "11A"] } */
+export interface TeachingAssignment {
+  subject: string;
+  classes: string[]; // grade + stream, e.g. "10A"
+}
 
 export interface TeacherForm {
   firstName: string;
@@ -38,6 +44,9 @@ export interface TeacherForm {
   specialization: string;
   certificates: File[];
 
+  // Teaching: the source of truth is `assignments`.
+  // `teachingSubjects` and `grades` are filled in from it on submit, so older backend code keeps working.
+  assignments: TeachingAssignment[];
   teachingSubjects: string[];
   grades: string[];
   classTeacherOf: string;
@@ -87,6 +96,7 @@ const initialForm: TeacherForm = {
   graduationYear: "",
   specialization: "",
   certificates: [],
+  assignments: [],
   teachingSubjects: [],
   grades: [],
   classTeacherOf: "",
@@ -123,6 +133,18 @@ const summarise = (errs: Errors): string => {
   return more > 0 ? `${first} (and ${more} more issue${more > 1 ? "s" : ""} below)` : first;
 };
 
+/** Laravel sends keys like "assignments.0.classes"; the form shows them under "assignments". */
+const mapServerErrors = (errs: Errors): Errors => {
+  const out: Errors = {};
+  Object.entries(errs).forEach(([k, msg]) => {
+    const key = k.startsWith("assignments") ? "assignments" : k.replace(/^(teachingSubjects|grades)\.\d+$/, "$1");
+    if (!out[key]) out[key] = msg;
+  });
+  return out;
+};
+
+const sortClasses = (classes: string[]) => [...classes].sort((a, b) => parseInt(a, 10) - parseInt(b, 10) || a.localeCompare(b));
+
 /* Field wrapper (kept outside the page component so inputs keep focus while typing) */
 function Field({ id, label, error, hint, children }: { id: string; label: string; error?: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -158,13 +180,40 @@ function RegisterTeacher({ onSubmit }: Props) {
     clearError(key);
   };
 
-  const toggle = (key: "teachingSubjects" | "grades", value: string) => {
-    setForm((f) => ({
-      ...f,
-      [key]: f[key].includes(value) ? f[key].filter((x) => x !== value) : [...f[key], value],
-    }));
-    clearError(key);
+  /* ----- Teaching assignments ----- */
+
+  const updateAssignments = (fn: (list: TeachingAssignment[]) => TeachingAssignment[]) => {
+    setForm((f) => ({ ...f, assignments: fn(f.assignments) }));
+    clearError("assignments");
   };
+
+  const toggleSubject = (subject: string) =>
+    updateAssignments((list) =>
+      list.some((a) => a.subject === subject)
+        ? list.filter((a) => a.subject !== subject)
+        : [...list, { subject, classes: [] }],
+    );
+
+  const toggleClass = (subject: string, code: string) =>
+    updateAssignments((list) =>
+      list.map((a) =>
+        a.subject !== subject
+          ? a
+          : { ...a, classes: a.classes.includes(code) ? a.classes.filter((c) => c !== code) : sortClasses([...a.classes, code]) },
+      ),
+    );
+
+  /** Select every stream of a grade, or clear them all if they are already all selected. */
+  const toggleWholeGrade = (subject: string, grade: string) =>
+    updateAssignments((list) =>
+      list.map((a) => {
+        if (a.subject !== subject) return a;
+        const codes = STREAMS.map((s) => `${grade}${s}`);
+        const all = codes.every((c) => a.classes.includes(c));
+        const rest = a.classes.filter((c) => !codes.includes(c));
+        return { ...a, classes: all ? rest : sortClasses([...rest, ...codes]) };
+      }),
+    );
 
   const isTsc = form.employmentType.startsWith("TSC");
 
@@ -187,8 +236,14 @@ function RegisterTeacher({ onSubmit }: Props) {
     if (!form.highestQualification) e.highestQualification = "Select the highest qualification";
     req("institution", form.institution, "Enter the institution");
     req("specialization", form.specialization, "Enter the area of specialization");
-    if (form.teachingSubjects.length < 1) e.teachingSubjects = "Choose at least one teaching subject";
-    if (form.grades.length < 1) e.grades = "Choose at least one grade";
+
+    if (form.assignments.length < 1) {
+      e.assignments = "Choose at least one subject the teacher teaches";
+    } else {
+      const empty = form.assignments.filter((a) => a.classes.length === 0).map((a) => a.subject);
+      if (empty.length) e.assignments = `Choose at least one class for: ${empty.join(", ")}`;
+    }
+
     req("kinName", form.kinName, "Enter a next of kin");
     if (!phoneOk(form.kinPhone)) e.kinPhone = "Enter a valid Kenyan phone number";
     if (!form.consentDataUse) e.consentDataUse = "Consent to data use is required";
@@ -198,6 +253,18 @@ function RegisterTeacher({ onSubmit }: Props) {
   const focusFirstInvalid = () =>
     // Wait a tick so the error state has rendered and data-invalid is on the DOM.
     setTimeout(() => document.querySelector<HTMLElement>("[data-invalid='true']")?.focus(), 0);
+
+  /** Fill the flat fields from the per-subject assignments before sending. */
+  const buildPayload = (): TeacherForm => {
+    const subjects = form.assignments.map((a) => a.subject);
+    const grades = Array.from(new Set(form.assignments.flatMap((a) => a.classes.map((c) => c.replace(/\D/g, ""))))).sort();
+    return {
+      ...form,
+      assignments: form.assignments.map((a) => ({ subject: a.subject, classes: sortClasses(a.classes) })),
+      teachingSubjects: subjects,
+      grades,
+    };
+  };
 
   const handleSubmit = async (ev: React.FormEvent) => {
     ev.preventDefault();
@@ -214,12 +281,13 @@ function RegisterTeacher({ onSubmit }: Props) {
     setSaving(true);
     try {
       const name = `${form.firstName} ${form.surname}`.trim();
+      const payload = buildPayload();
       let emailSent = true;
 
       if (onSubmit) {
-        await onSubmit(form);
+        await onSubmit(payload);
       } else {
-        emailSent = (await registerTeacher(form)).login_email_sent;
+        emailSent = (await registerTeacher(payload)).login_email_sent;
       }
 
       toast.success(`${name} has been registered.`);
@@ -230,8 +298,9 @@ function RegisterTeacher({ onSubmit }: Props) {
       setErrors({});
     } catch (err) {
       if (err instanceof ApiValidationError && Object.keys(err.errors).length) {
-        setErrors(err.errors);
-        toast.error(summarise(err.errors));
+        const mapped = mapServerErrors(err.errors);
+        setErrors(mapped);
+        toast.error(summarise(mapped));
         focusFirstInvalid();
       } else {
         toast.error(err instanceof Error ? err.message : "Could not register the teacher. Please try again.");
@@ -262,6 +331,9 @@ function RegisterTeacher({ onSubmit }: Props) {
       </select>
     </Field>
   );
+
+  const selectedSubjects = form.assignments.map((a) => a.subject);
+  const totalClasses = form.assignments.reduce((n, a) => n + a.classes.length, 0);
 
   return (
     <DashboardLayout
@@ -352,31 +424,74 @@ function RegisterTeacher({ onSubmit }: Props) {
           <section className="rl-card">
             <h2>Teaching assignment</h2>
 
-            <fieldset className="rl-subjects" style={{ marginTop: 0 }} {...(errors.teachingSubjects ? { "data-invalid": "true", tabIndex: -1 } : {})}>
+            <fieldset className="rl-subjects" style={{ marginTop: 0 }} {...(errors.assignments ? { "data-invalid": "true", tabIndex: -1 } : {})}>
               <legend>Subjects taught *</legend>
+              <p className="rl-note">Tick each subject the teacher teaches, then choose the grades and streams for it below.</p>
               <div className="rl-checks">
                 {SUBJECTS.map((s) => (
                   <label key={s} className="rl-check">
-                    <input type="checkbox" checked={form.teachingSubjects.includes(s)} onChange={() => toggle("teachingSubjects", s)} />
+                    <input type="checkbox" checked={selectedSubjects.includes(s)} onChange={() => toggleSubject(s)} />
                     {s}
                   </label>
                 ))}
               </div>
-              {errors.teachingSubjects && <small className="rl-err" role="alert">{errors.teachingSubjects}</small>}
+              {errors.assignments && <small className="rl-err" role="alert">{errors.assignments}</small>}
             </fieldset>
 
-            <fieldset className="rl-subjects" {...(errors.grades ? { "data-invalid": "true", tabIndex: -1 } : {})}>
-              <legend>Grades taught *</legend>
-              <div className="rl-checks">
-                {GRADES.map((g) => (
-                  <label key={g} className="rl-check">
-                    <input type="checkbox" checked={form.grades.includes(g)} onChange={() => toggle("grades", g)} />
-                    Grade {g}
-                  </label>
+            {form.assignments.length > 0 && (
+              <div style={{ marginTop: 20, display: "grid", gap: 12 }}>
+                {form.assignments.map((a) => (
+                  <div key={a.subject} style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 14 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, gap: 8, flexWrap: "wrap" }}>
+                      <strong>{a.subject}</strong>
+                      <small style={{ color: a.classes.length ? "#15803d" : "#b91c1c" }}>
+                        {a.classes.length ? `${a.classes.length} ${a.classes.length === 1 ? "class" : "classes"}: ${a.classes.join(", ")}` : "No class chosen yet"}
+                      </small>
+                    </div>
+
+                    <div style={{ display: "grid", gap: 8 }}>
+                      {GRADES.map((g) => {
+                        const wholeGrade = STREAMS.every((s) => a.classes.includes(`${g}${s}`));
+                        return (
+                          <div key={g} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                            <span style={{ width: 70, fontSize: 14 }}>Grade {g}</span>
+                            <button
+                              type="button"
+                              className={`rl-btn${wholeGrade ? " rl-primary" : ""}`}
+                              aria-pressed={wholeGrade}
+                              onClick={() => toggleWholeGrade(a.subject, g)}
+                              style={{ padding: "4px 10px" }}
+                            >
+                              All streams
+                            </button>
+                            {STREAMS.map((s) => {
+                              const code = `${g}${s}`;
+                              const on = a.classes.includes(code);
+                              return (
+                                <button
+                                  key={code}
+                                  type="button"
+                                  className={`rl-btn${on ? " rl-primary" : ""}`}
+                                  aria-pressed={on}
+                                  aria-label={`${a.subject}, Grade ${g} stream ${s}`}
+                                  onClick={() => toggleClass(a.subject, code)}
+                                  style={{ padding: "4px 12px", minWidth: 40 }}
+                                >
+                                  {s}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 ))}
+                <small className="rl-note">
+                  {form.assignments.length} {form.assignments.length === 1 ? "subject" : "subjects"}, {totalClasses} {totalClasses === 1 ? "class" : "classes"} in total.
+                </small>
               </div>
-              {errors.grades && <small className="rl-err" role="alert">{errors.grades}</small>}
-            </fieldset>
+            )}
 
             <div className="rl-grid" style={{ marginTop: 20 }}>
               <Field id="classTeacherOf" label="Class teacher of" error={errors.classTeacherOf} hint="Leave blank if not a class teacher">

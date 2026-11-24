@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { ChangeEvent, DragEvent, KeyboardEvent, ReactNode } from "react";
+import type { ChangeEvent, DragEvent, FormEvent, KeyboardEvent, ReactNode } from "react";
 import TeacherSidebar from "../Teachers/TeacherSidebar";
+import { apiUrl, authHeaders, getUser } from "../api/authApi";
 
 export type AssessmentStatus = "not_started" | "draft" | "submitted" | "returned" | "published";
 
@@ -10,27 +11,24 @@ export interface Learner {
   name: string;
 }
 
-/** One exam type (CAT 1, Mid-term, End of term...) for one subject. */
+/** An exam type (CAT 1, Mid-term, End of term...) defined for an academic year. */
 export interface ExamTypeOption {
   id: string;
   name: string;
   max: number;
-  status: AssessmentStatus;
-  reviewerComment?: string;
-  marks?: Record<string, string>;
+  yearId: string;
 }
 
 export interface SubjectOption {
   id: string;
   name: string;
-  examTypes: ExamTypeOption[];
 }
 
-/** A class / grade within an academic year. */
+/** One class (grade + stream), e.g. "Grade 10 B". `grade` is the grade name, e.g. "Grade 10". */
 export interface ClassOption {
   id: string;
   label: string;
-  learners: Learner[];
+  grade: string;
   subjects: SubjectOption[];
 }
 
@@ -38,6 +36,20 @@ export interface YearOption {
   id: string;
   label: string;
   classes: ClassOption[];
+}
+
+interface OptionsResponse {
+  currentYearId: string | null;
+  canManageExamTypes: boolean;
+  years: YearOption[];
+  examTypes: ExamTypeOption[];
+}
+
+interface SheetResponse {
+  learners: Learner[];
+  marks: Record<string, string>;
+  status: AssessmentStatus;
+  reviewerComment?: string | null;
 }
 
 export interface SheetPayload {
@@ -49,106 +61,42 @@ export interface SheetPayload {
 }
 
 export interface UploadResultsProps {
-  years?: YearOption[];
+  /** Who reviews submitted marks. Defaults to the Deputy (or the HOI when a Deputy is signed in). */
   reviewer?: "deputy" | "hoi";
   termLabel?: string;
-  userName?: string;
   theme?: "light" | "dark";
-  onSaveDraft?: (payload: SheetPayload) => Promise<void> | void;
-  onSubmit?: (payload: SheetPayload) => Promise<void> | void;
   onRequestCorrection?: (payload: Omit<SheetPayload, "marks">) => void;
 }
 
-const LEARNERS: Learner[] = [
-  { id: "l1", admNo: "1001", name: "Grace Njeri" },
-  { id: "l2", admNo: "1002", name: "Brian Otieno" },
-  { id: "l3", admNo: "1003", name: "Faith Wanjiru" },
-  { id: "l4", admNo: "1004", name: "Kevin Mutua" },
-  { id: "l5", admNo: "1005", name: "Amina Hassan" },
-  { id: "l6", admNo: "1006", name: "Joseph Kamau" },
-  { id: "l7", admNo: "1007", name: "Mercy Achieng" },
-  { id: "l8", admNo: "1008", name: "Daniel Kiprop" },
-  { id: "l9", admNo: "1009", name: "Lucy Wambui" },
-  { id: "l10", admNo: "1010", name: "Samuel Barasa" },
-];
+/* ------------------------------------------------------------------ */
+/* API                                                                 */
+/* ------------------------------------------------------------------ */
 
-const SAMPLE_YEARS: YearOption[] = [
-  {
-    id: "y2026",
-    label: "2026",
-    classes: [
-      {
-        id: "c1",
-        label: "Grade 10 East",
-        learners: LEARNERS,
-        subjects: [
-          {
-            id: "mat",
-            name: "Mathematics",
-            examTypes: [
-              {
-                id: "cat1",
-                name: "CAT 1",
-                max: 30,
-                status: "published",
-                marks: { l1: "26", l2: "21", l3: "28", l4: "17", l5: "24", l6: "19", l7: "22", l8: "ABS", l9: "25", l10: "20" },
-              },
-              {
-                id: "mid",
-                name: "Mid-term test",
-                max: 50,
-                status: "draft",
-                marks: { l1: "41", l2: "35", l3: "44", l4: "28", l5: "39" },
-              },
-              { id: "exam", name: "End of term exam", max: 100, status: "not_started" },
-            ],
-          },
-          {
-            id: "phy",
-            name: "Physics",
-            examTypes: [
-              {
-                id: "cat1",
-                name: "CAT 1",
-                max: 30,
-                status: "returned",
-                reviewerComment: "Two marks are above 30 and look like typing slips (1004 and 1007). Please check them and resubmit.",
-                marks: { l1: "22", l2: "18", l3: "25", l4: "33", l5: "20", l6: "16", l7: "37", l8: "21", l9: "24", l10: "19" },
-              },
-              { id: "exam", name: "End of term exam", max: 100, status: "not_started" },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-  {
-    id: "y2025",
-    label: "2025",
-    classes: [
-      {
-        id: "c0",
-        label: "Grade 9 East",
-        learners: LEARNERS,
-        subjects: [
-          {
-            id: "mat",
-            name: "Mathematics",
-            examTypes: [
-              {
-                id: "exam",
-                name: "End of term exam",
-                max: 100,
-                status: "published",
-                marks: { l1: "72", l2: "65", l3: "81", l4: "54", l5: "69", l6: "60", l7: "75", l8: "58", l9: "77", l10: "63" },
-              },
-            ],
-          },
-        ],
-      },
-    ],
-  },
-];
+async function api<T>(path: string, init: { method?: string; body?: unknown } = {}): Promise<T> {
+  const hasBody = init.body !== undefined;
+  const res = await fetch(apiUrl(path), {
+    method: init.method ?? "GET",
+    headers: { ...authHeaders(), ...(hasBody ? { "Content-Type": "application/json" } : {}) },
+    body: hasBody ? JSON.stringify(init.body) : undefined,
+  });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const first = body?.errors ? (Object.values(body.errors as Record<string, string[]>)[0]?.[0] ?? null) : null;
+    throw new Error(
+      first ??
+        body?.message ??
+        (res.status === 401
+          ? "Your session has ended. Please sign in again."
+          : res.status === 403
+            ? "You do not have permission to do that."
+            : "Something went wrong. Please try again."),
+    );
+  }
+  return body as T;
+}
+
+const gradeOrder = (g: string) => parseInt(g.replace(/\D/g, ""), 10) || 0;
+const NO_LEARNERS: Learner[] = [];
 
 /* ------------------------------------------------------------------ */
 /* Marks checking                                                      */
@@ -377,31 +325,42 @@ type Method = "grid" | "upload";
 type Filter = "all" | "missing" | "errors";
 type TemplateKind = "xlsx" | "xls" | "csv";
 
-export default function UploadResults({
-  years = SAMPLE_YEARS,
-  reviewer = "deputy",
-  termLabel = "Term 3, 2026",
-  userName = "Teacher",
-  theme = "light",
-  onSaveDraft,
-  onSubmit,
-  onRequestCorrection,
-}: UploadResultsProps) {
-  /* selection: Year > Class/Grade > Subject > Exam type */
+export default function UploadResults({ reviewer, termLabel = "Term 3, 2026", theme = "light", onRequestCorrection }: UploadResultsProps) {
+  const user = getUser();
+  const userName = user?.name ?? "Teacher";
+  const isAdmin = user?.role === "HOI" || user?.role === "DEPUTY";
+  const reviewerKind: "deputy" | "hoi" = reviewer ?? (user?.role === "DEPUTY" ? "hoi" : "deputy");
+
+  /* what this person may see: loaded from the server, which also enforces it */
+  const [options, setOptions] = useState<OptionsResponse | null>(null);
+  const [optionsError, setOptionsError] = useState<string | null>(null);
+
+  /* selection: Year > Grade > Class > Subject > Exam type */
   const [yearId, setYearId] = useState("");
+  const [gradeName, setGradeName] = useState("");
   const [classId, setClassId] = useState("");
   const [subjectId, setSubjectId] = useState("");
   const [examTypeId, setExamTypeId] = useState("");
 
+  const years = options?.years ?? [];
   const year = years.find((y) => y.id === yearId);
-  const cls = year?.classes.find((c) => c.id === classId);
+  const grades = useMemo(
+    () => Array.from(new Set((year?.classes ?? []).map((c) => c.grade))).sort((a, b) => gradeOrder(a) - gradeOrder(b) || a.localeCompare(b)),
+    [year],
+  );
+  const classesInGrade = (year?.classes ?? []).filter((c) => c.grade === gradeName);
+  const cls = classesInGrade.find((c) => c.id === classId);
   const subject = cls?.subjects.find((s) => s.id === subjectId);
-  const exam = subject?.examTypes.find((x) => x.id === examTypeId);
-  const sheetKey = year && cls && subject && exam ? `${year.id}:${cls.id}:${subject.id}:${exam.id}` : "";
+  const examTypes = (options?.examTypes ?? []).filter((x) => x.yearId === yearId);
+  const examType = examTypes.find((x) => x.id === examTypeId);
+  const sheetKey = year && cls && subject && examType ? `${year.id}:${cls.id}:${subject.id}:${examType.id}` : "";
+  const canManageExamTypes = options?.canManageExamTypes ?? false;
 
-  /* marks sheet */
+  /* the marks sheet for the chosen exam */
+  const [sheet, setSheet] = useState<SheetResponse | null>(null);
+  const [sheetLoading, setSheetLoading] = useState(false);
+  const [sheetError, setSheetError] = useState<string | null>(null);
   const [marks, setMarks] = useState<Record<string, string>>({});
-  const [statusOverrides, setStatusOverrides] = useState<Record<string, AssessmentStatus>>({});
   const [localSavedAt, setLocalSavedAt] = useState<number | null>(null);
   const [serverSavedAt, setServerSavedAt] = useState<number | null>(null);
   const touched = useRef(false);
@@ -422,10 +381,36 @@ export default function UploadResults({
   const [notice, setNotice] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
 
-  const status: AssessmentStatus = exam ? statusOverrides[sheetKey] ?? exam.status : "not_started";
+  /* exam type management (HOI and Deputy) */
+  const [showTypes, setShowTypes] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newMax, setNewMax] = useState("");
+  const [typeBusy, setTypeBusy] = useState(false);
+  const [typeError, setTypeError] = useState<string | null>(null);
+  const [typeNotice, setTypeNotice] = useState<string | null>(null);
+
+  const ready = Boolean(examType && sheet);
+  const status: AssessmentStatus = sheet?.status ?? "not_started";
   const locked = status === "submitted" || status === "published";
-  const max = exam?.max ?? 0;
-  const learners = cls?.learners ?? [];
+  const max = examType?.max ?? 0;
+  const learners = sheet?.learners ?? NO_LEARNERS;
+
+  /* Load the classes, subjects and exam types this person may use. */
+  useEffect(() => {
+    let off = false;
+    api<OptionsResponse>("/marks/options")
+      .then((o) => {
+        if (off) return;
+        setOptions(o);
+        if (o.currentYearId) setYearId(o.currentYearId);
+      })
+      .catch((err: Error) => {
+        if (!off) setOptionsError(err.message);
+      });
+    return () => {
+      off = true;
+    };
+  }, []);
 
   /* Load the sheet when the selection changes. A local draft wins over the server copy. */
   useEffect(() => {
@@ -439,29 +424,47 @@ export default function UploadResults({
     setMethod("grid");
     setLocalSavedAt(null);
     setServerSavedAt(null);
-    if (!sheetKey || !exam) {
-      setMarks({});
-      return;
-    }
-    let local: { marks: Record<string, string>; savedAt: number } | null = null;
-    try {
-      const raw = window.localStorage.getItem(DRAFT_PREFIX + sheetKey);
-      if (raw) local = JSON.parse(raw);
-    } catch {
-      local = null;
-    }
-    if (local && exam.status !== "published" && exam.status !== "submitted") {
-      setMarks(local.marks);
-      setLocalSavedAt(local.savedAt);
-    } else {
-      setMarks({ ...(exam.marks ?? {}) });
-    }
+    setSheet(null);
+    setSheetError(null);
+    setMarks({});
+    if (!sheetKey) return;
+
+    let off = false;
+    setSheetLoading(true);
+    const qs = new URLSearchParams({ year_id: yearId, stream_id: classId, subject_id: subjectId, exam_type_id: examTypeId });
+    api<SheetResponse>(`/marks/sheet?${qs.toString()}`)
+      .then((data) => {
+        if (off) return;
+        let local: { marks: Record<string, string>; savedAt: number } | null = null;
+        try {
+          const raw = window.localStorage.getItem(DRAFT_PREFIX + sheetKey);
+          if (raw) local = JSON.parse(raw);
+        } catch {
+          local = null;
+        }
+        if (local && data.status !== "published" && data.status !== "submitted") {
+          setMarks(local.marks);
+          setLocalSavedAt(local.savedAt);
+        } else {
+          setMarks({ ...data.marks });
+        }
+        setSheet(data);
+      })
+      .catch((err: Error) => {
+        if (!off) setSheetError(err.message);
+      })
+      .finally(() => {
+        if (!off) setSheetLoading(false);
+      });
+    return () => {
+      off = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sheetKey]);
 
   /* Keep a local copy so a dropped connection never loses typed marks. */
   useEffect(() => {
-    if (!sheetKey || !touched.current || locked) return;
+    if (!sheetKey || !sheet || !touched.current || locked) return;
     const t = window.setTimeout(() => {
       try {
         const savedAt = Date.now();
@@ -472,7 +475,7 @@ export default function UploadResults({
       }
     }, 600);
     return () => window.clearTimeout(t);
-  }, [marks, sheetKey, locked]);
+  }, [marks, sheetKey, sheet, locked]);
 
   const updateMarks = (fn: (m: Record<string, string>) => Record<string, string>) => {
     touched.current = true;
@@ -518,13 +521,21 @@ export default function UploadResults({
     });
   }, [rows, filter, query]);
 
-  const reviewerLabel = reviewer === "deputy" ? "the Deputy" : "the Head of Institution";
+  const reviewerLabel = reviewerKind === "deputy" ? "the Deputy" : "the Head of Institution";
   const payload = (): SheetPayload => ({ yearId, classId, subjectId, examTypeId, marks });
+  const requestBody = () => ({ year_id: yearId, stream_id: classId, subject_id: subjectId, exam_type_id: examTypeId, marks });
 
   /* ----- selection handlers (each level resets everything below it) ----- */
 
   const pickYear = (id: string) => {
     setYearId(id);
+    setGradeName("");
+    setClassId("");
+    setSubjectId("");
+    setExamTypeId("");
+  };
+  const pickGrade = (g: string) => {
+    setGradeName(g);
     setClassId("");
     setSubjectId("");
     setExamTypeId("");
@@ -558,7 +569,7 @@ export default function UploadResults({
   /* ----- upload handlers ----- */
 
   const handleFile = async (file: File | undefined | null) => {
-    if (!file || !exam) return;
+    if (!file || !examType) return;
     setUploadError(null);
     setReport(null);
     if (file.size > MAX_FILE_BYTES) {
@@ -568,7 +579,7 @@ export default function UploadResults({
     setReading(true);
     try {
       const table = await readTable(file);
-      setReport(analyse(table, learners, exam.max, file.name));
+      setReport(analyse(table, learners, examType.max, file.name));
     } catch (err) {
       setUploadError(err instanceof Error ? err.message : "The file could not be read.");
     } finally {
@@ -604,12 +615,12 @@ export default function UploadResults({
   };
 
   const downloadTemplate = async (kind: TemplateKind) => {
-    if (!year || !cls || !subject || !exam) return;
+    if (!year || !cls || !subject || !examType) return;
     const table: string[][] = [
-      ["Admission No", "Learner name", `Marks (out of ${exam.max})`],
-      ...cls.learners.map((l) => [l.admNo, l.name, marks[l.id] ?? ""]),
+      ["Admission No", "Learner name", `Marks (out of ${examType.max})`],
+      ...learners.map((l) => [l.admNo, l.name, marks[l.id] ?? ""]),
     ];
-    const base = `marks-${slug(year.label)}-${slug(cls.label)}-${slug(subject.name)}-${slug(exam.name)}`;
+    const base = `marks-${slug(year.label)}-${slug(cls.label)}-${slug(subject.name)}-${slug(examType.name)}`;
 
     if (kind === "xlsx" || kind === "xls") {
       try {
@@ -631,22 +642,22 @@ export default function UploadResults({
   /* ----- save and submit ----- */
 
   const saveDraft = async () => {
-    if (!exam) return;
+    if (!examType) return;
     setBusy(true);
     setFormError(null);
     try {
-      await onSaveDraft?.(payload());
+      await api("/marks/draft", { method: "POST", body: requestBody() });
       setServerSavedAt(Date.now());
       setNotice("Draft saved. You can come back and finish later.");
-    } catch {
-      setFormError("The draft could not be saved to the server. It is still kept on this device.");
+    } catch (err) {
+      setFormError(`${err instanceof Error ? err.message : "The draft could not be saved."} It is still kept on this device.`);
     } finally {
       setBusy(false);
     }
   };
 
   const submit = async () => {
-    if (!exam) return;
+    if (!examType) return;
     setNotice(null);
     if (stats.errors > 0 || stats.missing > 0) {
       setFormError(
@@ -664,18 +675,58 @@ export default function UploadResults({
     setBusy(true);
     setFormError(null);
     try {
-      await onSubmit?.(payload());
-      setStatusOverrides((s) => ({ ...s, [sheetKey]: "submitted" }));
+      await api("/marks/submit", { method: "POST", body: requestBody() });
+      setSheet((s) => (s ? { ...s, status: "submitted" } : s));
       try {
         window.localStorage.removeItem(DRAFT_PREFIX + sheetKey);
       } catch {
         /* ignore */
       }
-      setNotice(`Results submitted. ${reviewer === "deputy" ? "The Deputy" : "The Head of Institution"} has been notified and will approve or return them.`);
-    } catch {
-      setFormError("The results could not be submitted. Check your connection and try again.");
+      setNotice(`Results submitted. ${reviewerKind === "deputy" ? "The Deputy" : "The Head of Institution"} has been notified and will approve or return them.`);
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : "The results could not be submitted. Check your connection and try again.");
     } finally {
       setBusy(false);
+    }
+  };
+
+  /* ----- exam types (HOI and Deputy) ----- */
+
+  const addExamType = async (e: FormEvent) => {
+    e.preventDefault();
+    setTypeError(null);
+    setTypeNotice(null);
+    const name = newName.trim();
+    const maxMarks = Number(newMax);
+    if (!yearId) return setTypeError("Choose a year first.");
+    if (!name) return setTypeError("Enter a name, for example CAT 1.");
+    if (!Number.isInteger(maxMarks) || maxMarks < 1 || maxMarks > 1000) return setTypeError("Enter the maximum mark as a whole number from 1 to 1000.");
+
+    setTypeBusy(true);
+    try {
+      const created = await api<ExamTypeOption>("/exam-types", { method: "POST", body: { year_id: yearId, name, max_marks: maxMarks } });
+      setOptions((o) => (o ? { ...o, examTypes: [...o.examTypes, created] } : o));
+      setNewName("");
+      setNewMax("");
+      setTypeNotice(`${created.name} (out of ${created.max}) was added for ${year?.label}.`);
+    } catch (err) {
+      setTypeError(err instanceof Error ? err.message : "The exam type could not be added.");
+    } finally {
+      setTypeBusy(false);
+    }
+  };
+
+  const removeExamType = async (x: ExamTypeOption) => {
+    if (!window.confirm(`Remove "${x.name}" from ${year?.label}? This only works if no marks have been entered for it.`)) return;
+    setTypeError(null);
+    setTypeNotice(null);
+    try {
+      await api(`/exam-types/${x.id}`, { method: "DELETE" });
+      setOptions((o) => (o ? { ...o, examTypes: o.examTypes.filter((t) => t.id !== x.id) } : o));
+      if (examTypeId === x.id) setExamTypeId("");
+      setTypeNotice(`${x.name} was removed.`);
+    } catch (err) {
+      setTypeError(err instanceof Error ? err.message : "The exam type could not be removed.");
     }
   };
 
@@ -706,80 +757,218 @@ export default function UploadResults({
           <div>
             <h2 style={{ margin: 0, fontSize: 22, fontWeight: 600 }}>Upload results</h2>
             <p className="ss-note" style={{ marginTop: 6, maxWidth: "68ch" }}>
-              Choose the year, class, subject and exam type, then type the marks into the grid or upload an Excel (.xlsx, .xls) or CSV file for the
+              Choose the year, grade, class, subject and exam type, then type the marks into the grid or upload an Excel (.xlsx, .xls) or CSV file for the
               whole class. Marks stay as a draft until you submit them. After you submit, {reviewerLabel} reviews them
-              {reviewer === "deputy" ? " and the Head of Institution gives final approval" : ""}.
+              {reviewerKind === "deputy" ? " and the Head of Institution gives final approval" : ""}.
             </p>
           </div>
 
-          {/* ---------- 1. Choose year, class, subject, exam type ---------- */}
+          {optionsError ? (
+            <p className="ss-field-err" role="alert" style={{ margin: 0 }}>
+              {optionsError}
+            </p>
+          ) : null}
+
+          {/* ---------- 1. Choose year, grade, class, subject, exam type ---------- */}
           <section className="ss-card ss-panel" aria-labelledby="pick-title">
             <header>
               <h3 id="pick-title">Choose the exam</h3>
-              {exam ? <span className={STATUS_CLASS[status]}>{STATUS_LABEL[status]}</span> : <span className="ss-count">{termLabel}</span>}
+              {ready ? <span className={STATUS_CLASS[status]}>{STATUS_LABEL[status]}</span> : <span className="ss-count">{termLabel}</span>}
             </header>
-            <div className="ss-mk-pick">
-              <label className="ss-lab">
-                Year
-                <select className="ss-input" value={yearId} onChange={(e) => pickYear(e.target.value)}>
-                  <option value="">Select year</option>
-                  {years.map((y) => (
-                    <option key={y.id} value={y.id}>
-                      {y.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="ss-lab">
-                Class / Grade
-                <select className="ss-input" value={classId} onChange={(e) => pickClass(e.target.value)} disabled={!year}>
-                  <option value="">{year ? "Select class" : "Choose a year first"}</option>
-                  {year?.classes.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="ss-lab">
-                Subject
-                <select className="ss-input" value={subjectId} onChange={(e) => pickSubject(e.target.value)} disabled={!cls}>
-                  <option value="">{cls ? "Select subject" : "Choose a class first"}</option>
-                  {cls?.subjects.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="ss-lab">
-                Exam type
-                <select className="ss-input" value={examTypeId} onChange={(e) => setExamTypeId(e.target.value)} disabled={!subject}>
-                  <option value="">{subject ? "Select exam type" : "Choose a subject first"}</option>
-                  {subject?.examTypes.map((x) => (
-                    <option key={x.id} value={x.id}>
-                      {x.name} (out of {x.max})
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
-            <p className="ss-note">Only your own classes and subjects are listed. Changing a choice above clears the choices below it.</p>
+
+            {!options && !optionsError ? (
+              <p className="ss-muted" role="status" style={{ margin: "12px 0" }}>
+                Loading your classes…
+              </p>
+            ) : (
+              <>
+                <div className="ss-mk-pick">
+                  <label className="ss-lab">
+                    Year
+                    <select className="ss-input" value={yearId} onChange={(e) => pickYear(e.target.value)}>
+                      <option value="">Select year</option>
+                      {years.map((y) => (
+                        <option key={y.id} value={y.id}>
+                          {y.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="ss-lab">
+                    Grade
+                    <select className="ss-input" value={gradeName} onChange={(e) => pickGrade(e.target.value)} disabled={!year}>
+                      <option value="">{year ? "Select grade" : "Choose a year first"}</option>
+                      {grades.map((g) => (
+                        <option key={g} value={g}>
+                          {g}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="ss-lab">
+                    Class
+                    <select className="ss-input" value={classId} onChange={(e) => pickClass(e.target.value)} disabled={!gradeName}>
+                      <option value="">{gradeName ? "Select class" : "Choose a grade first"}</option>
+                      {classesInGrade.map((c) => (
+                        <option key={c.id} value={c.id}>
+                          {c.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="ss-lab">
+                    Subject
+                    <select className="ss-input" value={subjectId} onChange={(e) => pickSubject(e.target.value)} disabled={!cls}>
+                      <option value="">{cls ? "Select subject" : "Choose a class first"}</option>
+                      {cls?.subjects.map((s) => (
+                        <option key={s.id} value={s.id}>
+                          {s.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="ss-lab">
+                    Exam type
+                    <select className="ss-input" value={examTypeId} onChange={(e) => setExamTypeId(e.target.value)} disabled={!subject}>
+                      <option value="">{subject ? (examTypes.length ? "Select exam type" : "No exam types yet") : "Choose a subject first"}</option>
+                      {examTypes.map((x) => (
+                        <option key={x.id} value={x.id}>
+                          {x.name} (out of {x.max})
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                {year && years.length > 0 && year.classes.length === 0 ? (
+                  <p className="ss-note">There are no classes for {year.label}.</p>
+                ) : null}
+                {options && years.length === 0 ? (
+                  <p className="ss-note">
+                    You have no classes or subjects assigned yet. Ask the Head of Institution to assign your teaching subjects, then reload this page.
+                  </p>
+                ) : (
+                  <p className="ss-note">
+                    {isAdmin
+                      ? "You can enter marks for any grade, class and subject."
+                      : "Only your own classes and subjects are listed."}{" "}
+                    Changing a choice above clears the choices below it.
+                    {subject && examTypes.length === 0
+                      ? isAdmin
+                        ? " Add an exam type below to continue."
+                        : " Ask the Deputy or Head of Institution to add exam types for this year."
+                      : ""}
+                  </p>
+                )}
+              </>
+            )}
           </section>
 
+          {/* ---------- Exam types (HOI and Deputy only) ---------- */}
+          {canManageExamTypes && options ? (
+            <section className="ss-card ss-panel" aria-labelledby="types-title">
+              <header>
+                <h3 id="types-title">Exam types{year ? ` for ${year.label}` : ""}</h3>
+                <button type="button" className="ss-btn ss-btn-sm" aria-expanded={showTypes} onClick={() => setShowTypes((s) => !s)}>
+                  {showTypes ? "Hide" : "Manage exam types"}
+                </button>
+              </header>
+
+              {showTypes ? (
+                <div className="ss-pbody">
+                  {!year ? (
+                    <p className="ss-note">Choose a year above to see and add its exam types.</p>
+                  ) : (
+                    <>
+                      {examTypes.length === 0 ? (
+                        <p className="ss-muted" style={{ margin: "0 0 12px" }}>
+                          No exam types for {year.label} yet.
+                        </p>
+                      ) : (
+                        <table className="ss-table" style={{ marginTop: 0, marginBottom: 14 }}>
+                          <thead>
+                            <tr>
+                              <th scope="col">Name</th>
+                              <th scope="col" style={{ textAlign: "right" }}>
+                                Out of
+                              </th>
+                              <th scope="col" style={{ textAlign: "right" }}>
+                                <span className="ss-sr">Actions</span>
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {examTypes.map((x) => (
+                              <tr key={x.id}>
+                                <td>
+                                  <strong>{x.name}</strong>
+                                </td>
+                                <td style={{ textAlign: "right" }}>{x.max}</td>
+                                <td style={{ textAlign: "right" }}>
+                                  <button type="button" className="ss-btn ss-btn-sm" onClick={() => void removeExamType(x)}>
+                                    Remove
+                                  </button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      )}
+
+                      <form onSubmit={(e) => void addExamType(e)} noValidate style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+                        <label className="ss-lab" style={{ flex: "1 1 220px" }}>
+                          Name
+                          <input className="ss-input" value={newName} placeholder="e.g. CAT 2" maxLength={60} onChange={(e) => setNewName(e.target.value)} disabled={typeBusy} />
+                        </label>
+                        <label className="ss-lab" style={{ flex: "0 1 140px" }}>
+                          Out of
+                          <input className="ss-input" inputMode="numeric" value={newMax} placeholder="e.g. 30" onChange={(e) => setNewMax(e.target.value)} disabled={typeBusy} />
+                        </label>
+                        <button type="submit" className="ss-btn ss-btn-primary" disabled={typeBusy}>
+                          {typeBusy ? "Adding…" : `Add to ${year.label}`}
+                        </button>
+                      </form>
+                    </>
+                  )}
+                  {typeError ? (
+                    <p className="ss-field-err" role="alert" style={{ marginTop: 10 }}>
+                      {typeError}
+                    </p>
+                  ) : null}
+                  {typeNotice ? (
+                    <p className="ss-sent" role="status" style={{ marginTop: 10 }}>
+                      {typeNotice}
+                    </p>
+                  ) : null}
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+
           {/* ---------- Status messages ---------- */}
-          {exam && status === "returned" && exam.reviewerComment ? (
+          {sheetLoading ? (
+            <p className="ss-muted" role="status" style={{ margin: 0 }}>
+              Loading the class list and marks…
+            </p>
+          ) : null}
+          {sheetError ? (
+            <p className="ss-field-err" role="alert" style={{ margin: 0 }}>
+              {sheetError}
+            </p>
+          ) : null}
+
+          {ready && status === "returned" && sheet?.reviewerComment ? (
             <ul className="ss-alerts" style={{ margin: 0 }}>
               <li className="tone-warn">
                 <Icon name="warn" />
                 <span>
-                  <strong>Returned for correction.</strong> {exam.reviewerComment}
+                  <strong>Returned for correction.</strong> {sheet.reviewerComment}
                 </span>
               </li>
             </ul>
           ) : null}
 
-          {exam && status === "submitted" ? (
+          {ready && status === "submitted" ? (
             <ul className="ss-alerts" style={{ margin: 0 }}>
               <li className="tone-info">
                 <Icon name="upload" />
@@ -788,16 +977,12 @@ export default function UploadResults({
             </ul>
           ) : null}
 
-          {exam && status === "published" ? (
+          {ready && status === "published" ? (
             <ul className="ss-alerts" style={{ margin: 0 }}>
               <li className="tone-info">
                 <Icon name="upload" />
                 <span>These results are published to learners and parents. A published mark can only change through a correction request with a reason.</span>
-                <button
-                  type="button"
-                  className="ss-btn ss-btn-sm"
-                  onClick={() => onRequestCorrection?.({ yearId, classId, subjectId, examTypeId })}
-                >
+                <button type="button" className="ss-btn ss-btn-sm" onClick={() => onRequestCorrection?.({ yearId, classId, subjectId, examTypeId })}>
                   Request correction
                 </button>
               </li>
@@ -813,17 +998,23 @@ export default function UploadResults({
           {/* ---------- 2. Enter marks ---------- */}
           <section className="ss-card ss-panel" aria-labelledby="entry-title">
             <header>
-              <h3 id="entry-title">{exam ? `${year?.label} · ${cls?.label} · ${subject?.name} · ${exam.name}` : "Marks"}</h3>
-              {exam ? <span className="ss-count">Out of {exam.max}</span> : null}
+              <h3 id="entry-title">{ready ? `${year?.label} · ${cls?.label} · ${subject?.name} · ${examType?.name}` : "Marks"}</h3>
+              {ready ? <span className="ss-count">Out of {max}</span> : null}
             </header>
 
-            {!exam ? (
+            {!ready ? (
               <p className="ss-empty" style={{ margin: "24px 0 8px", textAlign: "center" }}>
-                Choose a year, class, subject and exam type to start entering marks.
+                {sheetLoading ? "Loading…" : "Choose a year, grade, class, subject and exam type to start entering marks."}
               </p>
             ) : (
               <div className="ss-pbody">
-                {!locked ? (
+                {learners.length === 0 ? (
+                  <p className="ss-empty" style={{ margin: "16px 0", textAlign: "center" }}>
+                    There are no learners registered in {cls?.label}.
+                  </p>
+                ) : null}
+
+                {!locked && learners.length > 0 ? (
                   <div className="ss-seg ss-mk-tabs" role="tablist" aria-label="How to enter marks">
                     <button type="button" role="tab" id="tab-grid" aria-selected={method === "grid"} aria-controls="panel-grid" className={method === "grid" ? "is-on" : ""} onClick={() => setMethod("grid")}>
                       Type marks
@@ -835,14 +1026,14 @@ export default function UploadResults({
                 ) : null}
 
                 {/* ----- Upload panel ----- */}
-                {method === "upload" && !locked ? (
+                {method === "upload" && !locked && learners.length > 0 ? (
                   <div id="panel-upload" role="tabpanel" aria-labelledby="tab-upload">
                     <ol className="ss-steps">
                       <li>
                         <div>
                           <strong>Download the template</strong>
                           <p className="ss-muted" style={{ margin: "4px 0 10px" }}>
-                            It lists every learner in {cls?.label} ({year?.label}) with their admission number, set up for {subject?.name} · {exam.name}. Any marks
+                            It lists every learner in {cls?.label} ({year?.label}) with their admission number, set up for {subject?.name} · {examType?.name}. Any marks
                             already in the grid are included.
                           </p>
                           <div className="ss-btn-row">
@@ -862,7 +1053,7 @@ export default function UploadResults({
                         <div>
                           <strong>Fill in the marks</strong>
                           <p className="ss-muted" style={{ margin: "4px 0 0" }}>
-                            Enter each mark out of {exam.max}. Write ABS for an absent learner. Leave a cell empty to skip that learner. Do not change the
+                            Enter each mark out of {max}. Write ABS for an absent learner. Leave a cell empty to skip that learner. Do not change the
                             admission numbers, because they are used to match each row.
                           </p>
                         </div>
@@ -950,7 +1141,7 @@ export default function UploadResults({
                       </div>
                     ) : null}
                   </div>
-                ) : (
+                ) : learners.length > 0 ? (
                   /* ----- Grid panel ----- */
                   <div id="panel-grid" role="tabpanel" aria-labelledby={locked ? undefined : "tab-grid"} style={{ display: "flex", flexDirection: "column", gap: 14 }}>
                     <div>
@@ -1021,7 +1212,7 @@ export default function UploadResults({
                             <th scope="col">Adm. no</th>
                             <th scope="col">Learner</th>
                             <th scope="col" style={{ textAlign: "right" }}>
-                              Mark / {exam.max}
+                              Mark / {max}
                             </th>
                             <th scope="col" style={{ textAlign: "right" }}>
                               %
@@ -1060,7 +1251,7 @@ export default function UploadResults({
                                     onKeyDown={(e) => onMarkKey(e, i)}
                                   />
                                 </td>
-                                <td style={{ textAlign: "right" }}>{r.state === "ok" ? `${Math.round((Number(r.value.replace(",", ".")) / exam.max) * 100)}%` : "–"}</td>
+                                <td style={{ textAlign: "right" }}>{r.state === "ok" ? `${Math.round((Number(r.value.replace(",", ".")) / max) * 100)}%` : "–"}</td>
                                 <td id={`mk-msg-${r.learner.id}`} className={`ss-mk-msg ${r.state}`}>
                                   {r.state === "error" ? r.message : r.state === "missing" ? "No mark yet" : r.state === "absent" ? "Absent" : "OK"}
                                 </td>
@@ -1071,13 +1262,13 @@ export default function UploadResults({
                       </table>
                     </div>
                   </div>
-                )}
+                ) : null}
               </div>
             )}
           </section>
 
           {/* ---------- Actions ---------- */}
-          {exam && !locked ? (
+          {ready && !locked && learners.length > 0 ? (
             <section className="ss-card" style={{ padding: "16px 22px" }}>
               <div className="ss-mk-actions">
                 <div className="ss-mk-saved" role="status">
@@ -1093,7 +1284,7 @@ export default function UploadResults({
                     Save draft
                   </button>
                   <button type="button" className="ss-btn ss-btn-primary" onClick={() => void submit()} disabled={busy}>
-                    {busy ? "Working…" : `Submit for ${reviewer === "deputy" ? "Deputy" : "HOI"} review`}
+                    {busy ? "Working…" : `Submit for ${reviewerKind === "deputy" ? "Deputy" : "HOI"} review`}
                   </button>
                 </div>
               </div>

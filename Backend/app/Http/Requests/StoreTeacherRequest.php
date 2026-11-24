@@ -77,13 +77,13 @@ class StoreTeacherRequest extends FormRequest
             'certificates'          => ['nullable', 'array', 'max:10'],
             'certificates.*'        => ['file', 'mimes:pdf,jpg,jpeg,png', 'max:5120'],
 
-            // Teaching assignment
-            'teaching_subjects'   => ['required', 'array', 'min:1'],
-            'teaching_subjects.*' => ['distinct', Rule::exists('subjects', 'name')],
-            'grades'              => ['required', 'array', 'min:1'],
-            'grades.*'            => ['distinct', Rule::in(['10', '11', '12'])],
-            'class_teacher_of'    => ['nullable', 'regex:/^(10|11|12)[A-F]$/'],
-            'is_hod'              => ['boolean'],
+            // Teaching assignment: each subject with the classes (grade + stream) it is taught in
+            'assignments'             => ['required', 'array', 'min:1'],
+            'assignments.*.subject'   => ['required', 'string', 'distinct', Rule::exists('subjects', 'name')],
+            'assignments.*.classes'   => ['required', 'array', 'min:1'],
+            'assignments.*.classes.*' => ['required', 'string', 'distinct', 'regex:/^(10|11|12)[A-F]$/'],
+            'class_teacher_of'        => ['nullable', 'regex:/^(10|11|12)[A-F]$/'],
+            'is_hod'                  => ['boolean'],
 
             // Next of kin
             'kin_name'         => ['required', 'string', 'max:150'],
@@ -99,22 +99,26 @@ class StoreTeacherRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'date_of_birth.before_or_equal' => 'The teacher must be at least 18 years old.',
-            'national_id.digits_between'    => 'Enter a valid national ID number (7 or 8 digits).',
-            'phone.regex'                   => 'Enter a valid Kenyan phone number, e.g. 0712 345 678.',
-            'alt_phone.regex'               => 'Enter a valid Kenyan phone number.',
-            'kin_phone.regex'               => 'Enter a valid Kenyan phone number.',
-            'kra_pin.regex'                 => 'KRA PIN looks like A123456789Z.',
-            'email.unique'                  => 'A user with this email already exists.',
-            'staff_no.unique'               => 'This staff number is already in use.',
-            'tsc_no.required'               => 'Enter the TSC number.',
-            'tsc_no.unique'                 => 'This TSC number is already registered.',
-            'department.exists'             => 'Select a valid department.',
-            'teaching_subjects.*.exists'    => 'One of the selected subjects does not exist.',
-            'certificates.*.mimes'          => 'Certificates must be PDF, JPG or PNG files.',
-            'certificates.*.max'            => 'Each certificate must be 5 MB or smaller.',
-            'photo.max'                     => 'The photo must be 2 MB or smaller.',
-            'consent_data_use.accepted'     => 'Consent to data use is required.',
+            'date_of_birth.before_or_equal'   => 'The teacher must be at least 18 years old.',
+            'national_id.digits_between'      => 'Enter a valid national ID number (7 or 8 digits).',
+            'phone.regex'                     => 'Enter a valid Kenyan phone number, e.g. 0712 345 678.',
+            'alt_phone.regex'                 => 'Enter a valid Kenyan phone number.',
+            'kin_phone.regex'                 => 'Enter a valid Kenyan phone number.',
+            'kra_pin.regex'                   => 'KRA PIN looks like A123456789Z.',
+            'email.unique'                    => 'A user with this email already exists.',
+            'staff_no.unique'                 => 'This staff number is already in use.',
+            'tsc_no.required'                 => 'Enter the TSC number.',
+            'tsc_no.unique'                   => 'This TSC number is already registered.',
+            'department.exists'               => 'Select a valid department.',
+            'assignments.required'            => 'Choose at least one subject the teacher teaches.',
+            'assignments.*.subject.exists'    => 'One of the selected subjects does not exist.',
+            'assignments.*.subject.distinct'  => 'A subject was selected more than once.',
+            'assignments.*.classes.required'  => 'Choose at least one class for every subject.',
+            'assignments.*.classes.*.regex'   => 'A class must look like 10A, 11B or 12C.',
+            'certificates.*.mimes'            => 'Certificates must be PDF, JPG or PNG files.',
+            'certificates.*.max'              => 'Each certificate must be 5 MB or smaller.',
+            'photo.max'                       => 'The photo must be 2 MB or smaller.',
+            'consent_data_use.accepted'       => 'Consent to data use is required.',
         ];
     }
 }
