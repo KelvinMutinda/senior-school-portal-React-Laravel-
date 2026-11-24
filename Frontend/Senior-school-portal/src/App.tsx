@@ -1,5 +1,5 @@
 import './App.css'
-import {Routes,Route} from "react-router-dom"
+import { Navigate, Route, Routes } from "react-router-dom"
 import RegisterLearner from './Hoi/RegisterLearner'
 import RegisterTeacher from './Hoi/RegisterTeacher'
 import HoiDashboard from './Hoi/HoiDashboard'
@@ -38,62 +38,102 @@ import Announcements from './Teachers/Annoucements'
 import AuditLog from './Hoi/AuditLog'
 import Approval from './Hoi/Approval'
 import { Toaster } from './components/Toast'
-import LearnerDashboardLoader from "./Student/LearnerDashboardLoader";
 import ChangePasswordPage from './auth/ChangePasswordPage'
+import { ProtectedRoute, PublicOnlyRoute } from './auth/ProtectedRoute'
+import { getUser } from './api/authApi'
+import type { PortalRole } from './api/authApi'
 
+/* Who may open what. Change a list here and every route in the group follows. */
+const ADMIN: PortalRole[] = ["HOI", "DEPUTY"]
+const STAFF: PortalRole[] = ["HOI", "DEPUTY", "TEACHER"]
+const STUDENT: PortalRole[] = ["LEARNER", "PARENT"]
+const MONEY: PortalRole[] = ["HOI", "DEPUTY", "FINANCE"]
 
+/** /Academic/LearningMaterials was used by both the learner and teacher pages, so pick by role. */
+function LearningMaterialsByRole() {
+  return getUser()?.role === "LEARNER" || getUser()?.role === "PARENT" ? <LearningMaterials /> : <GetLearningMaterial />
+}
 
 function App() {
-
   return (
     <>
-     <Toaster />
-    <Routes>
- 
-     
-      <Route path="/Register/Learner" element={<RegisterLearner/>}/>
-        <Route path="/Register/Teacher" element={<RegisterTeacher/>}/>
-        <Route path="/Hoi/Dashboard" element={<HoiDashboard/>}/>
-        <Route path="/Teacher/Dashboard" element={<TeacherDashboard/>}/>
-        <Route path="/Learner/Dashboard" element={<LearnerDashboard/>}/>
-        <Route path="/Finances/Dashboard" element={<FinanceDashboard/>}/>
-        <Route path="/add/Subjects" element={<AddSubject/>}/>
-        <Route path="/Results/Upload/Results" element={<UploadResults/>}/>
-        <Route path="/Results/View/Results" element={<ViewResults/>}/>
-        <Route path="/auth/Login" element={<Login/>}/>
-        <Route path="/Academics/Results" element={<AcademicResults/>}/>
-        <Route path="/Academics/Progress" element={<ProgressRecords/>}/>
-        <Route path="/Academic/LearningMaterials" element={<LearningMaterials/>}/>
-        <Route path="Academic/Timetable" element={<Timetable/>}/>
-        <Route path="/Academic/Overview" element={<AcademicOverview/>}/>
-        <Route path="/Finance/PayFees" element={<PayFees/>}/>
-        <Route path="/Finance/Fee/Structure" element={<FeeStructure/>}/>
-        <Route path="/Finance/Fee/statement" element={<FeeStatements/>}/>
-        <Route path="/Finance/Reports" element={<FinanceReports/>}/>
-        <Route path="/Hoi/Finances" element={<HoiFinances/>}/>
-        <Route path="/Hoi/Finances/Fee" element={<HoiFees/>}/>
-        <Route path="/Hoi/Finances/Payments" element={<HoiPayments/>}/>
-        <Route path="/CareerPathways" element={<PathwayRecommender/>}/>
-        <Route path="/Explore/Pathways" element={<Pathways/>}/>
-        <Route path="/AI/Chat" element={<AiTutorPage/>}/>
-        <Route path="/Students" element={<Students/>}/>
-        <Route path="/Hoi/AI/Insights" element={<AiInsights/>}/>
-        <Route path="/Hoi/AI/Controls" element={<AiControl/>}/>
-        <Route path="/Learner/Profile" element={<Profile/>}/>
-        <Route path="/Upload/LearningMaterial" element={<UploadLearningMaterial/>}/>
-        <Route path="/Academic/LearningMaterials" element={<GetLearningMaterial/>}/>
-        <Route path="/Generate/LearningMaterial" element={<AiTutorPage/>}/>
-        <Route path="/Academics/classes" element={<Classes/>}/>
-        <Route path="/Academics/Attendance" element={<Attendance/>}/>
-        <Route path="/Academics/Timetable" element={<Timetables/>}/>
-        <Route path="/Teacher/materials" element={<GetLearningMaterial/>}/>
-        <Route path="/Announcements" element={<Announcements/>}/>
-        <Route path="/" element={<Login/>}/>
-        <Route path="/Hoi/Approvals" element={<Approval/>}/>
-        <Route path="auth/ChangePassword" element={<ChangePasswordPage/>}/>
+      <Toaster />
+      <Routes>
+        {/* ---------- Public: only for people who are signed out ---------- */}
+        <Route element={<PublicOnlyRoute />}>
+          <Route path="/" element={<Login />} />
+          <Route path="/auth/Login" element={<Login />} />
+        </Route>
 
+        {/* ---------- Any signed-in person ---------- */}
+        <Route element={<ProtectedRoute />}>
+          <Route path="/auth/ChangePassword" element={<ChangePasswordPage />} />
+        </Route>
 
-    </Routes>
+        {/* ---------- Head of Institution and Deputy ---------- */}
+        <Route element={<ProtectedRoute roles={ADMIN} />}>
+          <Route path="/Hoi/Dashboard" element={<HoiDashboard />} />
+          <Route path="/Register/Learner" element={<RegisterLearner />} />
+          <Route path="/Register/Teacher" element={<RegisterTeacher />} />
+          <Route path="/add/Subjects" element={<AddSubject />} />
+          <Route path="/Academic/Overview" element={<AcademicOverview />} />
+          <Route path="/Hoi/AI/Insights" element={<AiInsights />} />
+          <Route path="/Hoi/AI/Controls" element={<AiControl />} />
+          <Route path="/Hoi/Approvals" element={<Approval />} />
+          <Route path="/Hoi/AuditLog" element={<AuditLog />} />
+        </Route>
+
+        {/* ---------- Finance (and the heads, who oversee it) ---------- */}
+        <Route element={<ProtectedRoute roles={["FINANCE"]} />}>
+          <Route path="/Finances/Dashboard" element={<FinanceDashboard />} />
+        </Route>
+        <Route element={<ProtectedRoute roles={MONEY} />}>
+          <Route path="/Finance/Reports" element={<FinanceReports />} />
+          <Route path="/Hoi/Finances" element={<HoiFinances />} />
+          <Route path="/Hoi/Finances/Fee" element={<HoiFees />} />
+          <Route path="/Hoi/Finances/Payments" element={<HoiPayments />} />
+        </Route>
+
+        {/* ---------- Teachers (and the heads) ---------- */}
+        <Route element={<ProtectedRoute roles={["TEACHER"]} />}>
+          <Route path="/Teacher/Dashboard" element={<TeacherDashboard />} />
+        </Route>
+        <Route element={<ProtectedRoute roles={STAFF} />}>
+          <Route path="/Results/Upload/Results" element={<UploadResults />} />
+          <Route path="/Results/View/Results" element={<ViewResults />} />
+          <Route path="/Academics/Progress" element={<ProgressRecords />} />
+          <Route path="/Academics/classes" element={<Classes />} />
+          <Route path="/Academics/Attendance" element={<Attendance />} />
+          <Route path="/Academics/Timetable" element={<Timetables />} />
+          <Route path="/Upload/LearningMaterial" element={<UploadLearningMaterial />} />
+          <Route path="/Teacher/materials" element={<GetLearningMaterial />} />
+          <Route path="/Generate/LearningMaterial" element={<AiTutorPage />} />
+          <Route path="/Announcements" element={<Announcements />} />
+          <Route path="/Students" element={<Students />} />
+        </Route>
+
+        {/* ---------- Learners (and parents) ---------- */}
+        <Route element={<ProtectedRoute roles={STUDENT} />}>
+          <Route path="/Learner/Dashboard" element={<LearnerDashboard />} />
+          <Route path="/Learner/Profile" element={<Profile />} />
+          <Route path="/Academics/Results" element={<AcademicResults />} />
+          <Route path="/Academic/Timetable" element={<Timetable />} />
+          <Route path="/Finance/PayFees" element={<PayFees />} />
+          <Route path="/Finance/Fee/Structure" element={<FeeStructure />} />
+          <Route path="/Finance/Fee/statement" element={<FeeStatements />} />
+          <Route path="/CareerPathways" element={<PathwayRecommender />} />
+          <Route path="/Explore/Pathways" element={<Pathways />} />
+          <Route path="/AI/Chat" element={<AiTutorPage />} />
+        </Route>
+
+        {/* ---------- Shared by learners and staff ---------- */}
+        <Route element={<ProtectedRoute roles={[...STUDENT, ...STAFF]} />}>
+          <Route path="/Academic/LearningMaterials" element={<LearningMaterialsByRole />} />
+        </Route>
+
+        {/* Anything else goes to the front door; the guards send people on from there. */}
+        <Route path="*" element={<Navigate to="/" replace />} />
+      </Routes>
     </>
   )
 }
