@@ -1,6 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import HeaderSection, { type Theme, type HeaderAction } from "../components/HeaderSection";
+import { logout as apiLogout } from "../api/authApi"; // adjust the path to where authApi.ts lives
 
 
 export type Role = "HOI" | "DEPUTY" | "TEACHER" | "FINANCE";
@@ -20,6 +21,7 @@ export interface MenuItem {
   icon: IconName;
   badge?: string; // key into the badges map
   soon?: boolean; // no page exists in App.tsx yet, so the item is shown but disabled
+  danger?: boolean; // styled as a sign-out style action
 }
 
 export interface MenuGroup {
@@ -58,6 +60,7 @@ const PATHS = {
   arrow: "M5 12h14 M13 6l6 6-6 6",
   bolt: "M13 2L4 14h7l-1 8 9-12h-7z",
   send: "M22 2L11 13 M22 2l-7 20-4-9-9-4z",
+  logout: "M9 21H5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h4 M16 17l5-5-5-5 M21 12H9",
 } as const;
 
 export type IconName = keyof typeof PATHS;
@@ -74,7 +77,9 @@ function Icon({ name, size = 18 }: { name: IconName; size?: number }) {
 /* ---------- 1. Menu and permissions ----------
    Routes match App.tsx. Items marked `soon` have no page in App.tsx yet,
    so they are shown disabled. Remove `soon` and set the route once the page exists.
-   Finance items point to the HOI pages in Hoi/Finances. */
+   Finance items point to the HOI pages in Hoi/Finances.
+   The Logout item (key "logout") is handled specially: it clears the session
+   through authApi.logout() and then redirects to /auth/Login. */
 
 export const MENU: MenuGroup[] = [
   { group: "Overview", items: [
@@ -118,6 +123,7 @@ export const MENU: MenuGroup[] = [
   ] },
   { group: "Account", items: [
     { key: "profile", label: "My Profile", desc: "Details and password", route: "", perm: "profile.view", icon: "user", soon: true },
+    { key: "logout", label: "Logout", desc: "Sign out of the portal", route: "/auth/Login", perm: "auth.logout", icon: "logout", danger: true },
   ] },
 ];
 
@@ -125,19 +131,19 @@ export const ROLE_PERMS: Record<Role, string[]> = {
   HOI: [
     "dashboard.view", "approvals.review", "academic.overview", "students.view", "subjects.manage", "attendance.view",
     "marks.review", "finance.overview", "fees.view", "payments.view", "reports.finance", "ai.insights", "ai.controls",
-    "messages.use", "announcements.view", "users.manage", "audit.view", "profile.view",
+    "messages.use", "announcements.view", "users.manage", "audit.view", "profile.view", "auth.logout",
   ],
   DEPUTY: [
     "dashboard.view", "approvals.review", "classes.view", "timetable.manage", "students.view",
-    "attendance.view", "marks.review", "ai.insights", "messages.use", "announcements.view", "profile.view",
+    "attendance.view", "marks.review", "ai.insights", "messages.use", "announcements.view", "profile.view", "auth.logout",
   ],
   TEACHER: [
     "dashboard.view", "classes.view", "students.view", "attendance.view", "marks.enter", "ai.tools",
-    "ai.insights", "messages.use", "announcements.view", "profile.view",
+    "ai.insights", "messages.use", "announcements.view", "profile.view", "auth.logout",
   ],
   FINANCE: [
     "dashboard.view", "students.fee", "finance.overview", "fees.view", "invoices.view", "payments.view", "outstanding.view",
-    "reconcile.view", "feequeries.view", "reports.finance", "messages.use", "announcements.view", "profile.view",
+    "reconcile.view", "feequeries.view", "reports.finance", "messages.use", "announcements.view", "profile.view", "auth.logout",
   ],
 };
 
@@ -198,7 +204,7 @@ export function Sidebar({ menu, activeKey, badges, open, onClose, onNavigate, sc
                   <a
                     key={item.key}
                     href={item.route}
-                    className={`ss-link ${active ? "is-active" : ""}`}
+                    className={`ss-link ${active ? "is-active" : ""} ${item.danger ? "is-logout" : ""}`}
                     aria-current={active ? "page" : undefined}
                     onClick={(e) => { e.preventDefault(); onNavigate(item.route, item.key); onClose(); }}
                   >
@@ -256,19 +262,27 @@ export function DashboardLayout({
     const path = location.pathname.toLowerCase().replace(/\/+$/, "");
     const hit = menu
       .flatMap((g) => g.items)
-      .find((i) => !i.soon && i.route && i.route.toLowerCase() === path);
+      .find((i) => !i.soon && i.key !== "logout" && i.route && i.route.toLowerCase() === path);
     return hit?.key ?? "dashboard";
   }, [activeKey, location.pathname, menu]);
 
+  const logout = () => {
+    // authApi.logout() removes the token, user and expiry from localStorage and
+    // sessionStorage straight away, then tells the server to revoke the token.
+    void apiLogout();
+    if (onLogout) onLogout();
+    else navigate("/auth/Login", { replace: true });
+  };
+
   const go = (route: string, key: string) => {
+    // The Logout item clears the session and redirects to /auth/Login
+    if (key === "logout") {
+      logout();
+      return;
+    }
     if (!route) return;
     if (onNavigate) onNavigate(route, key);
     else navigate(route);
-  };
-
-  const logout = () => {
-    if (onLogout) onLogout();
-    else navigate("/auth/Login");
   };
 
   return (

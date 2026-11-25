@@ -5408,3 +5408,5 @@ em.up { color: var(--green); } em.down { color: var(--red); }
   .ss-an-bar, .ss-mk-tabs { display: none; }
   .ss-an-sec .ss-mk-wrap { max-height: none; overflow: visible; }
 }
+.ss-link.is-logout { color: #dc2626; }
+.ss-link.is-logout:hover { background: rgba(220, 38, 38, 0.1); }
