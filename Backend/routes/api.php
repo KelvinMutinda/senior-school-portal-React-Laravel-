@@ -31,6 +31,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::get('/learner/dashboard', [LearnerPortalController::class, 'dashboard']);
 
     // Learning materials
+    Route::get('/learning-materials/{learning_material}/download', [LearningMaterialController::class, 'download']);
     Route::apiResource('learning-materials', LearningMaterialController::class)
         ->only(['index', 'store', 'show', 'destroy']);
 

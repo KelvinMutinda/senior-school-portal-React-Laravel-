@@ -9,14 +9,7 @@ use Illuminate\Support\Facades\Validator;
 
 class LearningMaterialController extends Controller
 {
-    /**
-     * GET /api/learning-materials
-     * Optional query string:
-     *   ?class_name=10A   only that class
-     *   ?subject=Mathematics
-     *   ?search=quadratic  matches title, description or subject
-     *   ?mine=1           only materials uploaded by the signed-in user
-     */
+    
     public function index(Request $request)
     {
         $userId = $request->user()?->id;
@@ -45,7 +38,7 @@ class LearningMaterialController extends Controller
                 'file_size'   => $m->file_size,
                 'file_url'    => $m->file_url,
                 'uploaded_by' => $m->uploader?->name,
-                'is_mine'     => $m->uploaded_by === $userId, // frontend shows Delete only when true
+                'is_mine'     => $m->uploaded_by === $userId,
                 'created_at'  => $m->created_at,
             ]);
 
@@ -98,6 +91,21 @@ class LearningMaterialController extends Controller
     public function show(LearningMaterial $learningMaterial)
     {
         return response()->json($learningMaterial->load('uploader:id,name'), 200);
+    }
+
+    /** GET /api/learning-materials/{id}/download (requires sign-in) */
+    public function download(LearningMaterial $learningMaterial)
+    {
+        $path = $learningMaterial->file_path;
+
+        if (! $path || ! Storage::disk('public')->exists($path)) {
+            return response()->json(['message' => 'The file could not be found.'], 404);
+        }
+
+        $name = $learningMaterial->file_name
+            ?: $learningMaterial->title . '.' . pathinfo($path, PATHINFO_EXTENSION);
+
+        return Storage::disk('public')->download($path, $name);
     }
 
     public function destroy(Request $request, LearningMaterial $learningMaterial)
