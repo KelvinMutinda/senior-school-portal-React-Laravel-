@@ -1,5 +1,5 @@
 import { ApiError, apiUrl, authHeaders, clearSession, getToken } from "./authApi";
-import type { LearnerDashboardData } from "../learner/LearnerDashboard";
+import type { LearnerDashboardData } from "../Student/LearnerDashboard";
 
 /** What GET /api/learner/dashboard sends back. */
 interface Payload {
@@ -56,7 +56,7 @@ export async function fetchLearnerDashboard(force = false): Promise<LearnerDashb
 
   const data: LearnerDashboardData = {
     ...EMPTY,
-    learner: body.learner,
+    learner: { ...body.learner, admissionNo: body.learner.admissionNo ?? body.profile?.admissionNo },
     profile: body.profile,
     termLabel: body.termLabel ?? "",
     dateLabel: today(),
@@ -64,4 +64,20 @@ export async function fetchLearnerDashboard(force = false): Promise<LearnerDashb
   };
   cache = { token, at: Date.now(), data };
   return data;
+}
+
+/** Ends the session on the server and in this browser. */
+export async function logout(): Promise<void> {
+  try {
+    await fetch(apiUrl("/logout"), {
+      method: "POST",
+      headers: { Accept: "application/json", ...authHeaders() },
+    });
+  } catch {
+    // Server unreachable: still sign out on this device.
+  } finally {
+    clearSession();
+    cache = null;
+    window.location.replace("/login"); // change if your login route is different
+  }
 }

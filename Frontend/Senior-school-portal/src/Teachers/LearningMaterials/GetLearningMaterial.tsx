@@ -10,7 +10,7 @@ const PAGE_SIZE = 12
 
 type MaterialType = 'pdf' | 'doc' | 'ppt' | 'video' | 'other'
 
-/** One item exactly as LearningMaterialController@index returns it. */
+
 interface ApiMaterial {
   id: number
   title: string
@@ -91,7 +91,7 @@ const errorFrom = async (res: Response, fallback: string) => {
     const data = await res.json()
     if (data?.message) return data.message as string
   } catch {
-    /* not JSON */
+   
   }
   return `${fallback} (${res.status})`
 }

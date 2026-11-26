@@ -9,9 +9,12 @@ use App\Http\Controllers\ResultsController;
 use App\Http\Controllers\TeacherController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\LearnerDetailsController;
 
 // Sign in (public)
+
 Route::post('/login', [LoginController::class, 'login']);
+
 
 Route::middleware('auth:sanctum')->group(function () {
     Route::get('/user', fn (Request $request) => $request->user());
@@ -29,6 +32,7 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Learner portal
     Route::get('/learner/dashboard', [LearnerPortalController::class, 'dashboard']);
+    Route::get('/learner/profile', [LearnerDetailsController::class, 'show']);
 
     // Learning materials
     Route::get('/learning-materials/{learning_material}/download', [LearningMaterialController::class, 'download']);

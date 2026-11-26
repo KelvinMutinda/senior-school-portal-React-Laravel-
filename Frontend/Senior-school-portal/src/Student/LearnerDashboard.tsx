@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent, KeyboardEvent, ReactNode } from "react";
 import { Link, useNavigate } from "react-router-dom";
+import { logout } from "../api/learnerApi";
 
 /* Styles live in the shared portal stylesheet (section 6 "Learner dashboard
    additions" and section 13 "Learner portal pages"). Import that stylesheet
@@ -159,7 +160,7 @@ export interface PayFeesRequest {
 export type DownloadKind = "material" | "report-card" | "receipt" | "fee-structure" | "fee-statement";
 
 export interface LearnerDashboardData {
-  learner: { firstName: string; fullName: string; classLabel: string };
+  learner: { firstName: string; fullName: string; classLabel: string; admissionNo?: string };
   profile?: LearnerProfile;
   termLabel: string;
   dateLabel: string;
@@ -850,6 +851,15 @@ function Sidebar({
         ))}
       </nav>
 
+      <button
+        type="button"
+        className="ss-link"
+        style={{ background: "none", border: 0, width: "100%", cursor: "pointer", textAlign: "left" }}
+        onClick={logout}
+      >
+        <span>Logout</span>
+      </button>
+
       <div className="ss-side-foot">
         {learner.fullName} · {learner.classLabel}
       </div>
@@ -857,7 +867,7 @@ function Sidebar({
   );
 }
 
-function PageHeader({ title, dateLabel, onOpenMenu }: { title: string; dateLabel: string; onOpenMenu: () => void }) {
+function PageHeader({ title, dateLabel, learner, onOpenMenu }: { title: string; dateLabel: string; learner: LearnerDashboardData["learner"]; onOpenMenu: () => void }) {
   return (
     <header className="ss-header">
       <button type="button" className="ss-h-icon ss-h-burger" aria-label="Open menu" aria-controls="learner-sidebar" onClick={onOpenMenu}>
@@ -866,6 +876,10 @@ function PageHeader({ title, dateLabel, onOpenMenu }: { title: string; dateLabel
       <div className="ss-h-title">
         <h1>{title}</h1>
         <span>{dateLabel}</span>
+      </div>
+      <div style={{ marginLeft: "auto", textAlign: "right" }}>
+        <strong style={{ display: "block" }}>{learner.fullName}</strong>
+        {learner.admissionNo ? <small>Adm No: {learner.admissionNo}</small> : null}
       </div>
     </header>
   );
@@ -3105,7 +3119,7 @@ export function LearnerShell({
       <div className={`ss-scrim${menuOpen ? " is-open" : ""}`} onClick={() => setMenuOpen(false)} aria-hidden="true" />
 
       <div className="ss-main">
-        <PageHeader title={title ?? meta.title} dateLabel={dateLabel} onOpenMenu={() => setMenuOpen(true)} />
+        <PageHeader title={title ?? meta.title} dateLabel={dateLabel} learner={learner} onOpenMenu={() => setMenuOpen(true)} />
         <main className="ss-content" ref={mainRef} tabIndex={-1}>
           {shownNote ? <p className="ss-page-note">{shownNote}</p> : null}
           {children}
