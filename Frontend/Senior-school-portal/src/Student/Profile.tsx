@@ -1,118 +1,102 @@
+import { useCallback, useEffect, useState } from 'react'
 import type { ReactNode } from 'react'
 import LearnerLayout from './LearnerLayout'
 import Icon from './Icon'
 import type { IconName } from './Icon'
+import { apiUrl, authHeaders } from '../api/authApi'
 
 /* ---------- Types ---------- */
 
 interface Guardian {
   name: string
-  relationship: string
-  phone: string
-  email: string
-  occupation: string
-  idMasked: string
+  relationship: string | null
+  phone: string | null
+  email: string | null
+  occupation: string | null
+  idMasked: string | null
+  isPrimary: boolean
 }
 
 interface LearnerProfile {
   firstName: string
-  middleName: string
+  middleName: string | null
   surname: string
-  gender: string
-  dateOfBirth: string // ISO date
-  nationality: string
-  birthCertNo: string
-  upi: string
+  gender: string | null
+  dateOfBirth: string | null // ISO date
+  nationality: string | null
+  birthCertNo: string | null
+  upi: string | null
   admissionNo: string
-  admissionDate: string // ISO date
-  grade: string
-  stream: string
-  pathway: string
-  residence: string
-  previousSchool: string
-  kjseaIndexNo: string
-  kjseaPerformance: string
+  status: string | null
+  admissionDate: string | null // ISO date
+  grade: string | null
+  stream: string | null
+  pathway: string | null
+  residence: string | null
+  previousSchool: string | null
+  kjseaIndexNo: string | null
+  kjseaPerformance: string | null
   compulsorySubjects: string[]
   electiveSubjects: string[]
-  email: string
-  phone: string
-  address: string
+  email: string | null
+  phone: string | null
+  address: string | null
   guardians: Guardian[]
-  emergency: { name: string; relationship: string; phone: string }
-  specialNeeds: string
+  emergency: { name: string | null; phone: string | null }
+  specialNeeds: string | null
   consents: { dataUse: boolean; aiTools: boolean; photo: boolean }
-  account: { username: string; lastLogin: string }
+  account: { username: string; lastLogin: string | null }
 }
 
-/* ---------- Fake data (replace with an API call later) ---------- */
+/* ---------- Data ---------- */
 
-const mockProfile: LearnerProfile = {
-  firstName: 'Grace',
-  middleName: 'Wanjiru',
-  surname: 'Njeri',
-  gender: 'Female',
-  dateOfBirth: '2010-05-14',
-  nationality: 'Kenyan',
-  birthCertNo: '884213/2010',
-  upi: 'KX7R29LQ',
-  admissionNo: 'SKSS/2026/0142',
-  admissionDate: '2026-01-12',
-  grade: 'Grade 10',
-  stream: 'East',
-  pathway: 'STEM',
-  residence: 'Day scholar',
-  previousSchool: 'Chuka Junior School',
-  kjseaIndexNo: '30412087015',
-  kjseaPerformance: 'Meeting expectations',
-  compulsorySubjects: ['English', 'Kiswahili / KSL', 'Community Service Learning', 'Physical Education'],
-  electiveSubjects: ['Mathematics', 'Biology', 'Chemistry', 'Physics'],
-  email: 'grace.njeri@seniorschool.ac.ke',
-  phone: '0712 345 678',
-  address: 'P.O. Box 214, Chuka, Tharaka-Nithi',
-  guardians: [
-    {
-      name: 'Mary Wambui Njeri',
-      relationship: 'Mother',
-      phone: '0722 410 936',
-      email: 'mary.njeri@example.com',
-      occupation: 'Primary school teacher',
-      idMasked: '•••• 4821',
-    },
-    {
-      name: 'Peter Kariuki Njeri',
-      relationship: 'Father',
-      phone: '0733 258 104',
-      email: 'peter.njeri@example.com',
-      occupation: 'Agricultural officer',
-      idMasked: '•••• 7305',
-    },
-  ],
-  emergency: { name: 'Mary Wambui Njeri', relationship: 'Mother', phone: '0722 410 936' },
-  specialNeeds: 'None recorded',
-  consents: { dataUse: true, aiTools: true, photo: true },
-  account: { username: 'SKSS-2026-0142', lastLogin: '2026-11-18T07:42:00' },
-}
+function useLearnerProfile() {
+  const [profile, setProfile] = useState<LearnerProfile | null>(null)
+  const [error, setError] = useState('')
 
-/* Swap this for a fetch to your API when the backend is ready. */
-function useLearnerProfile(): LearnerProfile {
-  return mockProfile
+  const load = useCallback(async () => {
+    setError('')
+    try {
+      const res = await fetch(apiUrl('/learner/profile'), {
+        headers: { Accept: 'application/json', ...authHeaders() },
+      })
+      if (res.status === 401) throw new Error('Your session has ended. Please sign in again.')
+      const data = await res.json().catch(() => null)
+      if (!res.ok || !data) throw new Error(data?.message || `Could not load your profile (${res.status})`)
+      setProfile(data as LearnerProfile)
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not load your profile.')
+    }
+  }, [])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  return { profile, error, load }
 }
 
 /* ---------- Helpers ---------- */
 
-const formatDate = (iso: string) =>
-  new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+const MISSING = 'Not on record'
 
-const formatDateTime = (iso: string) =>
-  new Date(iso).toLocaleString('en-GB', {
-    day: 'numeric',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+const formatDate = (iso: string | null) =>
+  iso
+    ? new Date(`${iso}T00:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' })
+    : MISSING
 
-const initials = (first: string, surname: string) => `${first[0] ?? ''}${surname[0] ?? ''}`.toUpperCase()
+const formatDateTime = (iso: string | null) =>
+  iso
+    ? new Date(iso).toLocaleString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : MISSING
+
+const initials = (first = '', surname = '') => `${first[0] ?? ''}${surname[0] ?? ''}`.toUpperCase()
 
 function Panel({
   title,
@@ -136,16 +120,16 @@ function Panel({
   )
 }
 
-function Detail({ label, value }: { label: string; value: string }) {
+function Detail({ label, value }: { label: string; value: string | null }) {
   return (
     <div className="pf-detail">
       <dt>{label}</dt>
-      <dd>{value}</dd>
+      <dd>{value || MISSING}</dd>
     </div>
   )
 }
 
-function ContactRow({ icon, label, value }: { icon: IconName; label: string; value: string }) {
+function ContactRow({ icon, label, value }: { icon: IconName; label: string; value: string | null }) {
   return (
     <li className="pf-contact">
       <span className="pf-contact-icon">
@@ -153,7 +137,7 @@ function ContactRow({ icon, label, value }: { icon: IconName; label: string; val
       </span>
       <div>
         <small>{label}</small>
-        <strong>{value}</strong>
+        <strong>{value || MISSING}</strong>
       </div>
     </li>
   )
@@ -171,8 +155,30 @@ function ConsentRow({ label, granted }: { label: string; granted: boolean }) {
 /* ---------- Page ---------- */
 
 function Profile() {
-  const p = useLearnerProfile()
-  const fullName = `${p.firstName} ${p.middleName} ${p.surname}`
+  const { profile: p, error, load } = useLearnerProfile()
+
+  if (!p) {
+    return (
+      <LearnerLayout
+        title="Profile"
+        description="Your personal, academic and guardian details. To correct locked details, contact the school office."
+      >
+        {error ? (
+          <div role="alert">
+            <p>{error}</p>
+            <button type="button" onClick={load}>
+              Retry
+            </button>
+          </div>
+        ) : (
+          <p>Loading your profile…</p>
+        )}
+      </LearnerLayout>
+    )
+  }
+
+  const fullName = [p.firstName, p.middleName, p.surname].filter(Boolean).join(' ')
+  const classLabel = p.grade ? `${p.grade} · ${p.stream} stream` : 'Class not assigned'
 
   return (
     <LearnerLayout
@@ -188,15 +194,14 @@ function Profile() {
         <div className="pf-hero-text">
           <h2>{fullName}</h2>
           <p>
-            Admission No. {p.admissionNo} · UPI {p.upi}
+            Admission No. {p.admissionNo}
+            {p.upi ? ` · UPI ${p.upi}` : ''}
           </p>
           <div className="pf-chips">
-            <span>
-              {p.grade} · {p.stream} stream
-            </span>
-            <span>{p.pathway} pathway</span>
-            <span>{p.residence}</span>
-            <span className="is-ok">Active</span>
+            <span>{classLabel}</span>
+            {p.pathway && <span>{p.pathway} pathway</span>}
+            {p.residence && <span>{p.residence}</span>}
+            {p.status === 'active' && <span className="is-ok">Active</span>}
           </div>
         </div>
 
@@ -215,20 +220,18 @@ function Profile() {
         </div>
         <div className="pf-stat">
           <span>Class</span>
-          <b>
-            {p.grade} {p.stream}
-          </b>
+          <b>{p.grade ? `${p.grade} ${p.stream}` : MISSING}</b>
           <small>Current stream</small>
         </div>
         <div className="pf-stat">
           <span>Pathway</span>
-          <b>{p.pathway}</b>
+          <b>{p.pathway || MISSING}</b>
           <small>{p.electiveSubjects.length} elective subjects</small>
         </div>
         <div className="pf-stat">
           <span>Residence</span>
-          <b>{p.residence}</b>
-          <small>{p.nationality} citizen</small>
+          <b>{p.residence || MISSING}</b>
+          <small>{p.nationality ? `${p.nationality} citizen` : ''}</small>
         </div>
       </div>
 
@@ -258,7 +261,7 @@ function Profile() {
           <dl className="pf-dl pf-dl-3">
             <Detail label="Admission number" value={p.admissionNo} />
             <Detail label="Admission date" value={formatDate(p.admissionDate)} />
-            <Detail label="Grade and stream" value={`${p.grade} · ${p.stream}`} />
+            <Detail label="Grade and stream" value={p.grade ? `${p.grade} · ${p.stream}` : null} />
             <Detail label="Pathway" value={p.pathway} />
             <Detail label="Previous school" value={p.previousSchool} />
             <Detail label="KJSEA index number" value={p.kjseaIndexNo} />
@@ -293,14 +296,14 @@ function Profile() {
         <Panel title="Parents and guardians" wide>
           <div className="pf-guardians">
             {p.guardians.map((g, i) => (
-              <article key={g.name} className="pf-guardian">
+              <article key={`${g.name}-${i}`} className="pf-guardian">
                 <header>
                   <div className="pf-guardian-avatar">{initials(g.name.split(' ')[0], g.name.split(' ').slice(-1)[0])}</div>
                   <div>
                     <strong>{g.name}</strong>
                     <small>
-                      {g.relationship}
-                      {i === 0 ? ' · Primary contact' : ''}
+                      {g.relationship || 'Guardian'}
+                      {g.isPrimary ? ' · Primary contact' : ''}
                     </small>
                   </div>
                 </header>
@@ -318,7 +321,6 @@ function Profile() {
         <Panel title="Emergency contact">
           <dl className="pf-dl pf-dl-one">
             <Detail label="Name" value={p.emergency.name} />
-            <Detail label="Relationship" value={p.emergency.relationship} />
             <Detail label="Phone" value={p.emergency.phone} />
           </dl>
         </Panel>

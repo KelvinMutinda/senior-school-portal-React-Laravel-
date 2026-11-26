@@ -20,7 +20,6 @@ import FeeStructure from './Student/Finance/FeeStructure'
 import FeeStatements from './Student/Finance/FeeStatements'
 import PathwayRecommender from './Student/CareerPathways/PathwayRecommender'
 import Pathways from './Student/CareerPathways/Pathways'
-import Profile from './Student/Profile'
 import AcademicOverview from './Hoi/AcademicOverview'
 import FinanceReports from './Hoi/Finances/FinanceReports'
 import HoiFees from './Hoi/Finances/Fee'
@@ -42,6 +41,9 @@ import ChangePasswordPage from './auth/ChangePasswordPage'
 import { ProtectedRoute, PublicOnlyRoute } from './auth/ProtectedRoute'
 import { getUser } from './api/authApi'
 import type { PortalRole } from './api/authApi'
+import LearnerPage from "./pages/learner/LearnerPage";
+import Profile from "./Student/Profile";
+
 
 /* Who may open what. Change a list here and every route in the group follows. */
 const ADMIN: PortalRole[] = ["HOI", "DEPUTY"]
@@ -114,7 +116,8 @@ function App() {
 
         {/* ---------- Learners (and parents) ---------- */}
         <Route element={<ProtectedRoute roles={STUDENT} />}>
-          <Route path="/Learner/Dashboard" element={<LearnerDashboard />} />
+      
+          <Route path="/Learner/Dashboard" element={<LearnerPage page="home" />} />
           <Route path="/Learner/Profile" element={<Profile />} />
           <Route path="/Academics/Results" element={<AcademicResults />} />
           <Route path="/Academic/Timetable" element={<Timetable />} />
