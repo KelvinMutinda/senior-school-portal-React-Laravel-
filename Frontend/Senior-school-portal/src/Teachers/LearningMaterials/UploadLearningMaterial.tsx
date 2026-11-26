@@ -1,59 +1,42 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import TeacherSidebar, { ROUTE } from '../TeacherSidebar'
+import { apiUrl, authHeaders, getUser } from '../../api/authApi' // adjust the path to where authApi.ts lives
 
 /* ------------------------------------------------------------------ */
-/* Config – adjust to match your backend                               */
+/* Config - must match LearningMaterialController::store               */
 /* ------------------------------------------------------------------ */
-const API_BASE = '/api'
 const MAX_SIZE_MB = 50
 const MAX_SIZE = MAX_SIZE_MB * 1024 * 1024
-const ACCEPT = '.pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.csv,.mp4,.mov,.webm,.png,.jpg,.jpeg,.gif,.txt'
+const MAX_DESCRIPTION = 255
+const ACCEPT = '.pdf,.doc,.docx,.ppt,.pptx,.mp4'
 
-type MaterialType = 'pdf' | 'doc' | 'ppt' | 'xls' | 'video' | 'image' | 'link' | 'other'
+type MaterialType = 'pdf' | 'doc' | 'ppt' | 'video' | 'other'
 
 interface TeacherClass {
   className: string
   subject: string
 }
 
-interface StoredUser {
-  name?: string
-  role?: string
-}
-
 const TYPE_LABELS: Record<MaterialType, string> = {
   pdf: 'PDF',
   doc: 'Document',
   ppt: 'Slides',
-  xls: 'Sheet',
   video: 'Video',
-  image: 'Image',
-  link: 'Link',
   other: 'Other',
 }
 
 /* ------------------------------------------------------------------ */
 /* Helpers                                                             */
 /* ------------------------------------------------------------------ */
-const getUser = (): StoredUser => {
-  try {
-    return JSON.parse(localStorage.getItem('user') || '{}')
-  } catch {
-    return {}
-  }
-}
-
-const token = () => localStorage.getItem('token') || ''
+const extOf = (fileName: string) => fileName.split('.').pop()?.toLowerCase() || ''
 
 const detectType = (fileName: string): MaterialType => {
-  const ext = fileName.split('.').pop()?.toLowerCase() || ''
+  const ext = extOf(fileName)
   if (ext === 'pdf') return 'pdf'
-  if (['doc', 'docx', 'txt'].includes(ext)) return 'doc'
+  if (['doc', 'docx'].includes(ext)) return 'doc'
   if (['ppt', 'pptx'].includes(ext)) return 'ppt'
-  if (['xls', 'xlsx', 'csv'].includes(ext)) return 'xls'
-  if (['mp4', 'mov', 'webm'].includes(ext)) return 'video'
-  if (['png', 'jpg', 'jpeg', 'gif'].includes(ext)) return 'image'
+  if (ext === 'mp4') return 'video'
   return 'other'
 }
 
@@ -66,29 +49,35 @@ const titleFromFile = (name: string) =>
     .replace(/[_-]+/g, ' ')
     .trim()
 
-const isValidUrl = (value: string) => {
+/** Turns a Laravel error response into one readable message. */
+const messageFromResponse = (status: number, text: string): string => {
   try {
-    const u = new URL(value)
-    return u.protocol === 'http:' || u.protocol === 'https:'
+    const data = JSON.parse(text) as { message?: string; errors?: Record<string, string[]> }
+    if (data?.errors) {
+      const first = Object.values(data.errors)[0]
+      if (Array.isArray(first) && first[0]) return first[0]
+    }
+    if (data?.message) return data.message
   } catch {
-    return false
+    /* not JSON */
   }
+  if (status === 401) return 'Your session has ended. Please sign in again.'
+  if (status === 413) return 'The file is too large for the server. Ask the administrator to raise the upload limit.'
+  return `Upload failed (${status}).`
 }
 
 /* ------------------------------------------------------------------ */
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
 function UploadLearningMaterial() {
-  const user = useMemo(getUser, [])
+  const user = useMemo(() => getUser(), [])
   const inputRef = useRef<HTMLInputElement>(null)
   const xhrRef = useRef<XMLHttpRequest | null>(null)
 
   const [classes, setClasses] = useState<TeacherClass[]>([])
   const [classesLoaded, setClassesLoaded] = useState(false)
 
-  const [mode, setMode] = useState<'file' | 'link'>('file')
   const [file, setFile] = useState<File | null>(null)
-  const [linkUrl, setLinkUrl] = useState('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [classKey, setClassKey] = useState('') // "className|subject"
@@ -101,9 +90,10 @@ function UploadLearningMaterial() {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState<string | null>(null)
 
-  // teacher's own class/subject combinations
+  // The teacher's own class/subject combinations. If this endpoint does not
+  // exist yet, the form falls back to typing the class and subject by hand.
   useEffect(() => {
-    fetch(`${API_BASE}/classes/mine`, { headers: { Authorization: `Bearer ${token()}` } })
+    fetch(apiUrl('/classes/mine'), { headers: authHeaders() })
       .then((r) => (r.ok ? r.json() : []))
       .then((d) => setClasses(Array.isArray(d) ? d : d.classes ?? []))
       .catch(() => setClasses([]))
@@ -114,6 +104,11 @@ function UploadLearningMaterial() {
 
   const pickFile = (f: File | undefined | null) => {
     if (!f) return
+    const ext = extOf(f.name)
+    if (!ACCEPT.split(',').includes(`.${ext}`)) {
+      setError('Only PDF, Word, PowerPoint and MP4 files can be uploaded.')
+      return
+    }
     if (f.size > MAX_SIZE) {
       setError(`“${f.name}” is ${formatSize(f.size)}. The limit is ${MAX_SIZE_MB} MB.`)
       return
@@ -131,7 +126,6 @@ function UploadLearningMaterial() {
 
   const resetForm = () => {
     setFile(null)
-    setLinkUrl('')
     setTitle('')
     setDescription('')
     setProgress(0)
@@ -148,30 +142,25 @@ function UploadLearningMaterial() {
 
     if (!title.trim()) return setError('Please give the material a title.')
     if (!selClass || !selSubject) return setError('Please choose the class and subject this material is for.')
-    if (mode === 'file' && !file) return setError('Please choose a file to upload.')
-    if (mode === 'link' && !isValidUrl(linkUrl.trim()))
-      return setError('Please enter a valid link starting with http:// or https://')
+    if (!description.trim()) return setError('Please add a short description.')
+    if (!file) return setError('Please choose a file to upload.')
 
-    const type: MaterialType = mode === 'link' ? 'link' : detectType(file!.name)
-
+    // Field names must match the Laravel validator exactly
     const body = new FormData()
     body.append('title', title.trim())
-    body.append('description', description.trim())
-    body.append('className', selClass)
+    body.append('class_name', selClass)
     body.append('subject', selSubject)
-    body.append('type', type)
-    if (mode === 'file' && file) {
-      body.append('file', file)
-      body.append('fileName', file.name)
-    } else {
-      body.append('fileUrl', linkUrl.trim())
-    }
+    body.append('description', description.trim())
+    body.append('file', file)
 
     // XMLHttpRequest so we can show real upload progress and allow cancelling
     const xhr = new XMLHttpRequest()
     xhrRef.current = xhr
-    xhr.open('POST', `${API_BASE}/learning-materials`)
-    xhr.setRequestHeader('Authorization', `Bearer ${token()}`)
+    xhr.open('POST', apiUrl('/learning-materials'))
+
+    // Accept + Authorization. Content-Type is NOT set: the browser adds the
+    // multipart boundary itself, and setting it by hand breaks the upload.
+    Object.entries(authHeaders()).forEach(([k, v]) => xhr.setRequestHeader(k, v))
 
     xhr.upload.onprogress = (ev) => {
       if (ev.lengthComputable) setProgress(Math.round((ev.loaded / ev.total) * 100))
@@ -181,14 +170,7 @@ function UploadLearningMaterial() {
       if (xhr.status >= 200 && xhr.status < 300) {
         setSuccess(title.trim())
       } else {
-        let msg = `Upload failed (${xhr.status}).`
-        try {
-          const data = JSON.parse(xhr.responseText)
-          if (data?.message) msg = data.message
-        } catch {
-          /* keep default message */
-        }
-        setError(msg)
+        setError(messageFromResponse(xhr.status, xhr.responseText))
       }
     }
     xhr.onerror = () => {
@@ -227,10 +209,10 @@ function UploadLearningMaterial() {
             <span>{dateLabel}</span>
           </div>
           <div className="tt-user">
-            <div className="tt-avatar">{(user.name || 'T').charAt(0).toUpperCase()}</div>
+            <div className="tt-avatar">{(user?.name || 'T').charAt(0).toUpperCase()}</div>
             <div>
-              <div className="tt-user-name">{user.name || 'Teacher'}</div>
-              <div className="tt-user-role">{user.role || 'Subject teacher'}</div>
+              <div className="tt-user-name">{user?.name || 'Teacher'}</div>
+              <div className="tt-user-role">{user?.role === 'TEACHER' ? 'Subject teacher' : user?.role || 'Subject teacher'}</div>
             </div>
           </div>
         </header>
@@ -238,7 +220,7 @@ function UploadLearningMaterial() {
         <main className="tt-content">
           <div className="tt-heading">
             <h1>Upload learning material</h1>
-            <p>Share notes, slides, past papers or a link with your learners and colleagues.</p>
+            <p>Share notes, slides or past papers with your learners and colleagues.</p>
           </div>
 
           {success ? (
@@ -258,72 +240,52 @@ function UploadLearningMaterial() {
           ) : (
             <div className="um-layout">
               <form className="um-card" onSubmit={submit} noValidate>
-                {/* Source: file or link */}
+                {/* Content */}
                 <div className="um-section-head">
-                  <h2>1. Add the content</h2>
-                  <div className="tt-tabs">
-                    <button type="button" className={mode === 'file' ? 'active' : ''} onClick={() => setMode('file')}>
-                      File
-                    </button>
-                    <button type="button" className={mode === 'link' ? 'active' : ''} onClick={() => setMode('link')}>
-                      Link
-                    </button>
-                  </div>
+                  <h2>1. Add the file</h2>
                 </div>
 
-                {mode === 'file' ? (
-                  file ? (
-                    <div className="um-file">
-                      <span className="um-file-type" data-type={detected}>
-                        {TYPE_LABELS[detected!]}
-                      </span>
-                      <div className="um-file-info">
-                        <strong title={file.name}>{file.name}</strong>
-                        <span>{formatSize(file.size)}</span>
-                      </div>
-                      <button
-                        type="button"
-                        className="um-file-remove"
-                        disabled={uploading}
-                        onClick={() => {
-                          setFile(null)
-                          if (inputRef.current) inputRef.current.value = ''
-                        }}
-                      >
-                        Remove
-                      </button>
+                {file ? (
+                  <div className="um-file">
+                    <span className="um-file-type" data-type={detected}>
+                      {TYPE_LABELS[detected!]}
+                    </span>
+                    <div className="um-file-info">
+                      <strong title={file.name}>{file.name}</strong>
+                      <span>{formatSize(file.size)}</span>
                     </div>
-                  ) : (
-                    <div
-                      className={`um-drop${dragOver ? ' over' : ''}`}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => inputRef.current?.click()}
-                      onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && inputRef.current?.click()}
-                      onDragOver={(e) => {
-                        e.preventDefault()
-                        setDragOver(true)
+                    <button
+                      type="button"
+                      className="um-file-remove"
+                      disabled={uploading}
+                      onClick={() => {
+                        setFile(null)
+                        if (inputRef.current) inputRef.current.value = ''
                       }}
-                      onDragLeave={() => setDragOver(false)}
-                      onDrop={onDrop}
                     >
-                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-                        <path d="M12 16V4M7 9l5-5 5 5M4 20h16" />
-                      </svg>
-                      <strong>Drag a file here, or click to browse</strong>
-                      <span>PDF, Word, PowerPoint, Excel, images or video · up to {MAX_SIZE_MB} MB</span>
-                    </div>
-                  )
+                      Remove
+                    </button>
+                  </div>
                 ) : (
-                  <label className="um-field">
-                    Link address
-                    <input
-                      type="url"
-                      placeholder="https://www.youtube.com/watch?v=…"
-                      value={linkUrl}
-                      onChange={(e) => setLinkUrl(e.target.value)}
-                    />
-                  </label>
+                  <div
+                    className={`um-drop${dragOver ? ' over' : ''}`}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => inputRef.current?.click()}
+                    onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && inputRef.current?.click()}
+                    onDragOver={(e) => {
+                      e.preventDefault()
+                      setDragOver(true)
+                    }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={onDrop}
+                  >
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M12 16V4M7 9l5-5 5 5M4 20h16" />
+                    </svg>
+                    <strong>Drag a file here, or click to browse</strong>
+                    <span>PDF, Word, PowerPoint or MP4 · up to {MAX_SIZE_MB} MB</span>
+                  </div>
                 )}
 
                 <input
@@ -353,7 +315,7 @@ function UploadLearningMaterial() {
                   <div className="um-row">
                     <label className="um-field">
                       Class
-                      <input placeholder="Grade 11A" value={manualClass} onChange={(e) => setManualClass(e.target.value)} />
+                      <input placeholder="11A" value={manualClass} onChange={(e) => setManualClass(e.target.value)} />
                     </label>
                     <label className="um-field">
                       Subject
@@ -375,15 +337,17 @@ function UploadLearningMaterial() {
                 )}
 
                 <label className="um-field">
-                  Description <em>(optional)</em>
+                  Description
                   <textarea
                     rows={4}
-                    maxLength={500}
+                    maxLength={MAX_DESCRIPTION}
                     placeholder="What is covered, and how should learners use it?"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                   />
-                  <small>{description.length}/500</small>
+                  <small>
+                    {description.length}/{MAX_DESCRIPTION}
+                  </small>
                 </label>
 
                 {error && <div className="tt-alert um-error">{error}</div>}
@@ -393,7 +357,7 @@ function UploadLearningMaterial() {
                     <div className="um-progress-bar">
                       <div style={{ width: `${progress}%` }} />
                     </div>
-                    <span>{mode === 'file' ? `Uploading… ${progress}%` : 'Saving…'}</span>
+                    <span>Uploading… {progress}%</span>
                   </div>
                 )}
 
@@ -408,7 +372,7 @@ function UploadLearningMaterial() {
                     </Link>
                   )}
                   <button type="submit" className="tt-btn tt-btn-primary" disabled={uploading}>
-                    {uploading ? 'Uploading…' : mode === 'file' ? 'Upload material' : 'Save link'}
+                    {uploading ? 'Uploading…' : 'Upload material'}
                   </button>
                 </div>
               </form>
@@ -416,9 +380,9 @@ function UploadLearningMaterial() {
               <aside className="um-tips">
                 <h3>Tips for good materials</h3>
                 <ul>
-                  <li>Use a clear title that includes the topic, e.g. “Photosynthesis – Form 3 notes”.</li>
+                  <li>Use a clear title that includes the topic, e.g. “Photosynthesis – Grade 10 notes”.</li>
                   <li>Pick the exact class and subject so learners and colleagues find it quickly.</li>
-                  <li>Large videos upload faster as a link (YouTube, Google Drive) than as a file.</li>
+                  <li>Keep videos under {MAX_SIZE_MB} MB. Compress longer recordings before uploading.</li>
                   <li>Check a document for learner names or private information before sharing.</li>
                 </ul>
               </aside>

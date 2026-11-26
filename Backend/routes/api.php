@@ -3,6 +3,7 @@
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\LearnerController;
 use App\Http\Controllers\LearnerPortalController;
+use App\Http\Controllers\LearningMaterialController;
 use App\Http\Controllers\MarksController;
 use App\Http\Controllers\ResultsController;
 use App\Http\Controllers\TeacherController;
@@ -28,6 +29,10 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Learner portal
     Route::get('/learner/dashboard', [LearnerPortalController::class, 'dashboard']);
+
+    // Learning materials
+    Route::apiResource('learning-materials', LearningMaterialController::class)
+        ->only(['index', 'store', 'show', 'destroy']);
 
     // Marks entry (the controller checks the role: teacher, Deputy or HOI)
     Route::get('/marks/options', [MarksController::class, 'options']);

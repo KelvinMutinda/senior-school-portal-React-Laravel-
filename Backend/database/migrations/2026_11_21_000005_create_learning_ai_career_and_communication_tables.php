@@ -34,24 +34,7 @@ return new class extends Migration
 
         /* ---------- Learning materials ---------- */
 
-        Schema::create('learning_materials', function (Blueprint $t) {
-            $t->id();
-            $t->string('title');
-            $t->foreignId('subject_id')->constrained();
-            $t->foreignId('grade_id')->nullable()->constrained()->nullOnDelete();
-            $t->foreignId('stream_id')->nullable()->constrained()->nullOnDelete();
-            $t->enum('kind', ['Notes', 'Past paper', 'Worksheet', 'Revision pack', 'Quiz', 'Flashcards', 'Summary']);
-            $t->enum('source', ['upload', 'ai'])->default('upload');
-            $t->enum('status', ['draft', 'awaiting_review', 'published'])->default('draft')->index();
-            $t->string('file_path')->nullable();
-            $t->unsignedBigInteger('size_bytes')->nullable();
-            $t->longText('content')->nullable();           // AI generated body before export to PDF
-            $t->foreignId('uploaded_by')->constrained('users');
-            $t->foreignId('reviewed_by')->nullable()->constrained('users')->nullOnDelete();
-            $t->timestamp('published_at')->nullable();
-            $t->timestamps();
-        });
-
+      
         /* ---------- AI controls and consent ---------- */
 
         // HOI "AI Controls": enable, restrict or disable features (globally or per grade).
@@ -143,7 +126,7 @@ return new class extends Migration
         Schema::create('quizzes', function (Blueprint $t) {
             $t->id();
             $t->foreignId('subject_id')->constrained();
-            $t->foreignId('learning_material_id')->nullable()->constrained()->nullOnDelete();
+           // $t->foreignId('learning_material_id')->nullable()->constrained()->nullOnDelete();
             $t->string('topic');
             $t->json('questions');                         // [{q, options, answer, explanation}]
             $t->enum('source', ['ai', 'teacher'])->default('ai');
