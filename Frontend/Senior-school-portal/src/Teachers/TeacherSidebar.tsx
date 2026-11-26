@@ -1,8 +1,6 @@
-
 import React, { useEffect, useState } from 'react'
-import { NavLink, useLocation } from 'react-router-dom'
-
-
+import { NavLink, useLocation, useNavigate } from 'react-router-dom'
+import { logout as apiLogout } from '../api/authApi' // adjust the path to where authApi.ts lives
 
 export const ROUTE = {
   dashboard: '/Teacher/Dashboard',
@@ -85,6 +83,7 @@ const ICONS: Record<string, string> = {
   spark: 'M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z',
   cap: 'M2 9l10-5 10 5-10 5zM6 11v5c0 1.5 3 3 6 3s6-1.5 6-3v-5',
   megaphone: 'M4 10v4h3l7 4V6L7 10zM18 9a4 4 0 010 6',
+  logout: 'M9 21H5a1 1 0 01-1-1V4a1 1 0 011-1h4M16 17l5-5-5-5M21 12H9',
 }
 
 export const Icon = ({ name }: { name: string }) => (
@@ -104,7 +103,9 @@ export const Icon = ({ name }: { name: string }) => (
 
 const TeacherSidebar: React.FC = () => {
   const [open, setOpen] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
   const location = useLocation()
+  const navigate = useNavigate()
 
   // Close the drawer whenever the route changes
   useEffect(() => {
@@ -125,6 +126,15 @@ const TeacherSidebar: React.FC = () => {
       document.body.style.overflow = prev
     }
   }, [open])
+
+  const handleLogout = async () => {
+    setSigningOut(true)
+    // authApi.logout() clears the token, user and expiry straight away,
+    // then tells the server to revoke the token.
+    await apiLogout()
+    // replace: the Back button will not return to a signed-in page
+    navigate('/auth/Login', { replace: true })
+  }
 
   return (
     <>
@@ -183,6 +193,19 @@ const TeacherSidebar: React.FC = () => {
               ))}
             </div>
           ))}
+
+          <div className="tt-nav-group tt-logout-group">
+            <div className="tt-nav-heading">Account</div>
+            <button
+              type="button"
+              className="tt-nav-link tt-logout"
+              onClick={handleLogout}
+              disabled={signingOut}
+            >
+              <Icon name="logout" />
+              <span>{signingOut ? 'Signing out…' : 'Logout'}</span>
+            </button>
+          </div>
         </nav>
       </aside>
     </>

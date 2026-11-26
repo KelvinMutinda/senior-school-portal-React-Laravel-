@@ -5410,3 +5410,14 @@ em.up { color: var(--green); } em.down { color: var(--red); }
 }
 .ss-link.is-logout { color: #dc2626; }
 .ss-link.is-logout:hover { background: rgba(220, 38, 38, 0.1); }
+.tt-nav-link.tt-logout {
+  width: 100%;
+  background: none;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  color: #f87171;
+}
+.tt-nav-link.tt-logout:hover { background: rgba(248, 113, 113, 0.12); }
+.tt-nav-link.tt-logout:disabled { opacity: 0.6; cursor: wait; }
