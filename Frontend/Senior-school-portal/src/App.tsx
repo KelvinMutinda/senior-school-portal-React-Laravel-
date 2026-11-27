@@ -46,13 +46,12 @@ import Profile from "./Student/Profile";
 import TeacherProfile from './Teachers/TeacherProfile'
 
 
-/* Who may open what. Change a list here and every route in the group follows. */
+
 const ADMIN: PortalRole[] = ["HOI", "DEPUTY"]
 const STAFF: PortalRole[] = ["HOI", "DEPUTY", "TEACHER"]
 const STUDENT: PortalRole[] = ["LEARNER", "PARENT"]
 const MONEY: PortalRole[] = ["HOI", "DEPUTY", "FINANCE"]
 
-/** /Academic/LearningMaterials was used by both the learner and teacher pages, so pick by role. */
 function LearningMaterialsByRole() {
   return getUser()?.role === "LEARNER" || getUser()?.role === "PARENT" ? <LearningMaterials /> : <GetLearningMaterial />
 }
@@ -62,7 +61,7 @@ function App() {
     <>
       <Toaster />
       <Routes>
-        {/* ---------- Public: only for people who are signed out ---------- */}
+
         <Route element={<PublicOnlyRoute />}>
           <Route path="/" element={<Login />} />
           <Route path="/auth/Login" element={<Login />} />

@@ -11,6 +11,8 @@ use App\Http\Controllers\TeacherController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\LearnerDetailsController;
+use App\Http\Controllers\LearnerCountController;
+
 
 // Sign in (public)
 
@@ -23,7 +25,12 @@ Route::middleware('auth:sanctum')->group(function () {
     // Sign out
     Route::post('/logout', [LoginController::class, 'logout']);
     Route::get('/teacher/profile',[TeacherDashboardController::class,'show']);
+
     
+    Route::get('/learners', [LearnerCountController::class, 'index']);
+    Route::put('/learners/{id}', [LearnerCountController::class, 'update']);
+    Route::delete('/learners/{id}', [LearnerCountController::class, 'destroy']);
+
 
     Route::post('/change-password', [LoginController::class, 'changePassword'])
         ->middleware('throttle:6,1');
