@@ -1,37 +1,68 @@
 <?php
+
 namespace App\Http\Controllers;
 
 use App\Models\StaffProfile;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Suport\Facades\DB;
+use Illuminate\Support\Facades\DB;
 
-
-class TeacherDashboardController extends Controller{
-
-public function show(Request $request):JsonResponse{
-    $user=$request->user();
-    abort_unless(strtoupper($user->role)==='TEACHER',403,'This page is for teachers');
-
-    $Teacher=StaffProfile::where('user_id',$user->id)->first();
-    
-    $profile=DB::table('staff_profiles')->where('id',$Teacher->staff_profile_id)->first();
-    $grades=DB::table('staff_grade')->where('id',$grade->$grade_id)->first();
-    $subjects=DB::table('staff_subjects')->where('id',$subjects->subject_id)->first();
-    $department=DB::table('departments')->where('id',$department->department_id);
-
-    return response()->json([
-        'firstName'=>$Teacher->first_name,
-        'lastName'=>$Teacher->surname,
-        'staffNumber'=>$Teacher->staffNo,
-        'tscNumber'=>$Teacher->tsc_number,
-        'idNumber'=>$Teacher->id_number,
-        'phoneNumber'=>$Teacher->phone_no,
-        'subjects'=>$subjects? ($subjectNames[$subjects->slug])
-    
-    }   
+class TeacherDashboardController extends Controller
+{
    
+    public function show(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        abort_unless(strtoupper($user->role) === 'TEACHER', 403, 'This page is for teachers.');
 
+        $teacher = StaffProfile::where('user_id', $user->id)->first();
+        abort_if(! $teacher, 404, 'No staff record is linked to this account.');
 
+        $department = $teacher->department_id
+            ? DB::table('departments')->where('id', $teacher->department_id)->value('name')
+            : null;
+
+        $yearId = DB::table('academic_years')->where('is_current', true)->value('id');
+
+        $assignments = DB::table('teaching_assignments as ta')
+            ->join('subjects as s', 's.id', '=', 'ta.subject_id')
+            ->join('streams as st', 'st.id', '=', 'ta.stream_id')
+            ->join('grades as g', 'g.id', '=', 'st.grade_id')
+            ->where('ta.staff_profile_id', $teacher->id)
+            ->where('ta.academic_year_id', $yearId)
+            ->orderBy('s.name')
+            ->orderBy('g.level')
+            ->orderBy('st.name')
+            ->get(['s.name as subject', 'g.level as level', 'st.name as stream']);
+
+        // [{ subject: "Mathematics", classes: ["10A", "11C"] }, ...]
+        $teaching = $assignments
+            ->groupBy('subject')
+            ->map(fn ($rows, $subject) => [
+                'subject' => $subject,
+                'classes' => $rows->map(fn ($r) => $r->level.$r->stream)->values(),
+            ])
+            ->values();
+
+        $date = fn ($v) => $v ? Carbon::parse($v)->toDateString() : null;
+
+        return response()->json([
+            'firstName' => $teacher->first_name,
+            'middleName' => $teacher->middle_name,
+            'lastName' => $teacher->surname,
+            'staffNumber' => $teacher->staff_no,
+            'tscNumber' => $teacher->tsc_number,
+            'idMasked' => $teacher->id_number ? '•••• '.substr($teacher->id_number, -4) : null,
+            'email' => $user->email,
+            'phone' => $teacher->phone ?? $user->phone,
+            'designation' => $teacher->designation,
+            'employmentType' => $teacher->employment_type,
+            'dateOfEmployment' => $date($teacher->date_of_employment),
+            'department' => $department,
+            'isHod' => (bool) $teacher->is_hod,
+            'subjects' => $teaching->pluck('subject')->values(),
+            'teaching' => $teaching,
+        ]);
+    }
 }
