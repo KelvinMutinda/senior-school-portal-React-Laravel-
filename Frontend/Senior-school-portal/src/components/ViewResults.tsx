@@ -851,8 +851,13 @@ export default function ViewResults({ schoolName = "Senior School", termLabel = 
     try {
       await fn();
       setNotice(done);
-    } catch {
-      setError("The file could not be created. Check that jspdf, jspdf-autotable and xlsx are installed, then try again.");
+    } catch (e) {
+      // Messages that start with "Could not load" come from the report builder and say what is wrong
+      setError(
+        e instanceof Error && e.message.startsWith("Could not load")
+          ? e.message
+          : "The file could not be created. Check that jspdf, jspdf-autotable and xlsx are installed, then try again.",
+      );
     } finally {
       setBusy(false);
     }
@@ -863,10 +868,29 @@ export default function ViewResults({ schoolName = "Senior School", termLabel = 
     void run(() => saveAnalysisExcel(sections, `results-analysis-${base}.xlsx`), "Analysis Excel file downloaded.");
   };
 
+  // The PDF is the class performance report: summary, merit list, subject grade distribution and
+  // comparison with the previous exam. It loads every class in the chosen scope, so it can take a moment.
   const downloadAnalysisPdf = () => {
     if (!analysis) return;
+    const inScope = (options?.classes ?? []).filter((c) => (classId !== "all" ? c.id === classId : grade === "all" || String(c.grade) === grade));
+    const loadClass = (streamId: string, exam?: string) => {
+      const p = new URLSearchParams(baseQuery);
+      p.set("stream_id", streamId);
+      if (exam) p.set("exam", exam);
+      return api<ClassData>(`/results/class?${p.toString()}`);
+    };
     void run(
-      () => saveAnalysisPdf({ sections, charts: analysis, schoolName, termLabel, meta: analysis.meta, filename: `results-analysis-${base}.pdf` }),
+      () =>
+        saveAnalysisPdf({
+          schoolName,
+          termLabel,
+          meta: analysis.meta,
+          bands,
+          classes: inScope,
+          loadClass,
+          comparison: analysis.comparison,
+          filename: `results-analysis-${base}.pdf`,
+        }),
       "Analysis PDF downloaded.",
     );
   };
@@ -1140,7 +1164,8 @@ export default function ViewResults({ schoolName = "Senior School", termLabel = 
                   <div style={{ display: "flex", flexDirection: "column", gap: 22 }}>
                     <div className="ss-an-bar">
                       <p className="ss-muted" style={{ margin: 0 }}>
-                        Download the full analysis: charts, grades, classes, subjects, grade bands, comparison with the previous exam, most improved learners and more.
+                        Excel has every table on this page. The PDF is the class performance report: summary, merit list, subject grade distribution and comparison with the
+                        previous exam, one report for each grade in your selection.
                       </p>
                       <div className="ss-btn-row">
                         <button type="button" className="ss-btn" onClick={downloadAnalysisExcel} disabled={busy}>
