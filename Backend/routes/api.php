@@ -4,6 +4,7 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\LearnerController;
 use App\Http\Controllers\LearnerPortalController;
 use App\Http\Controllers\LearningMaterialController;
+use App\Http\Controllers\TeacherDashboardController;
 use App\Http\Controllers\MarksController;
 use App\Http\Controllers\ResultsController;
 use App\Http\Controllers\TeacherController;
@@ -21,6 +22,8 @@ Route::middleware('auth:sanctum')->group(function () {
 
     // Sign out
     Route::post('/logout', [LoginController::class, 'logout']);
+    Route::get('/teacher/profile',[TeacherDashboardController::class,'show']);
+    
 
     Route::post('/change-password', [LoginController::class, 'changePassword'])
         ->middleware('throttle:6,1');

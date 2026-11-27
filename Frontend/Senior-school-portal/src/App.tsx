@@ -43,6 +43,7 @@ import { getUser } from './api/authApi'
 import type { PortalRole } from './api/authApi'
 import LearnerPage from "./pages/learner/LearnerPage";
 import Profile from "./Student/Profile";
+import TeacherProfile from './Teachers/TeacherProfile'
 
 
 /* Who may open what. Change a list here and every route in the group follows. */
@@ -99,6 +100,7 @@ function App() {
         {/* ---------- Teachers (and the heads) ---------- */}
         <Route element={<ProtectedRoute roles={["TEACHER"]} />}>
           <Route path="/Teacher/Dashboard" element={<TeacherDashboard />} />
+          <Route path="Teacher/Profile" element={<TeacherProfile/>}/>
         </Route>
         <Route element={<ProtectedRoute roles={STAFF} />}>
           <Route path="/Results/Upload/Results" element={<UploadResults />} />

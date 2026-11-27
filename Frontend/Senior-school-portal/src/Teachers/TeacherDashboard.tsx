@@ -7,10 +7,10 @@ export interface ClassInfo {
   id: string;
   name: string;
   subject: string;
-  learners: number;
-  mean: number;
-  attendance: number;
-  marksSubmitted: number;
+  learners: number | null;
+  mean: number | null;
+  attendance: number | null;
+  marksSubmitted: number | null;
 }
 
 export interface Lesson {
@@ -97,7 +97,7 @@ export interface TeacherUser {
 export interface TeacherData {
   classes: ClassInfo[];
   lessons: Lesson[];
-  periodsThisWeek: number;
+  periodsThisWeek: number | null;
   pendingMarks: PendingMarks[];
   results: ResultSummary[];
   progress: ProgressTrend[];
@@ -106,7 +106,7 @@ export interface TeacherData {
   alerts: WeaknessAlert[];
   tutorTopics: TutorTopic[];
   notices: Notice[];
-  aiUsage: { materialsThisTerm: number; quizAttempts: number; tutorSessions: number };
+  aiUsage: { materialsThisTerm: number; quizAttempts: number; tutorSessions: number } | null;
   commentsDone: number; // class teachers only
   commentsTotal: number;
 }
@@ -135,6 +135,7 @@ export interface TeacherDashboardProps {
 
 const ROUTE = {
   dashboard: "/Teacher/Dashboard",
+  profile: "/Teacher/Profile",
   classes: "/Academics/classes",
   students: "/Students",
   attendance: "/Academics/Attendance",
@@ -149,81 +150,10 @@ const ROUTE = {
   announcements: "/Announcements",
   comments: "/Academics/Comments",
 } as const;
-/* ------------------------------------------------------------------ */
-/* Sample data (replace with API results)                              */
-/* ------------------------------------------------------------------ */
-
-const SAMPLE: TeacherData = {
-  classes: [
-    { id: "11A", name: "Grade 11A", subject: "Mathematics", learners: 42, mean: 61, attendance: 94, marksSubmitted: 100 },
-    { id: "11B", name: "Grade 11B", subject: "Mathematics", learners: 40, mean: 57, attendance: 92, marksSubmitted: 60 },
-    { id: "12A", name: "Grade 12A", subject: "Physics", learners: 38, mean: 64, attendance: 95, marksSubmitted: 80 },
-  ],
-  lessons: [
-    { id: "l1", time: "8:00 AM", classId: "11A", subject: "Mathematics", room: "Room 4", registerTaken: true },
-    { id: "l2", time: "10:20 AM", classId: "12A", subject: "Physics", room: "Lab 1", registerTaken: false },
-    { id: "l3", time: "2:00 PM", classId: "11B", subject: "Mathematics", room: "Room 6", registerTaken: false },
-  ],
-  periodsThisWeek: 14,
-  pendingMarks: [
-    { id: "m1", assessment: "End of Term 3 exam", classId: "11B", status: "Draft", due: "Tue, 17 Nov" },
-    { id: "m2", assessment: "Practical assessment 2", classId: "12A", status: "Not started", due: "Fri, 20 Nov" },
-    { id: "m3", assessment: "CAT 3", classId: "11A", status: "Returned", due: "Mon, 16 Nov", note: "Deputy: check two marks above 100" },
-  ],
-  results: [
-    { classId: "11A", assessment: "CAT 2", date: "28 Oct", mean: 61, previousMean: 60, highest: 88, lowest: 29 },
-    { classId: "11B", assessment: "CAT 2", date: "28 Oct", mean: 57, previousMean: 57, highest: 84, lowest: 24 },
-    { classId: "12A", assessment: "Practical assessment 1", date: "30 Oct", mean: 64, previousMean: 63, highest: 91, lowest: 35 },
-  ],
-  progress: [
-    { classId: "11A", points: [54, 57, 58, 60, 61], improving: 19, steady: 17, declining: 6 },
-    { classId: "11B", points: [58, 55, 56, 57, 57], improving: 11, steady: 20, declining: 9 },
-    { classId: "12A", points: [59, 60, 62, 63, 64], improving: 17, steady: 15, declining: 6 },
-  ],
-  roster: {
-    "11A": [
-      { id: "s1", name: "Achieng Otieno", admNo: "1021" },
-      { id: "s2", name: "Brian Kiptoo", admNo: "1022" },
-      { id: "s3", name: "Cynthia Mwende", admNo: "1023" },
-      { id: "s4", name: "Daniel Njoroge", admNo: "1024" },
-      { id: "s5", name: "Esther Wambui", admNo: "1025" },
-      { id: "s6", name: "Felix Mutua", admNo: "1026" },
-    ],
-    "11B": [
-      { id: "s7", name: "Grace Akinyi", admNo: "1051" },
-      { id: "s8", name: "Hassan Ali", admNo: "1052" },
-      { id: "s9", name: "Irene Chebet", admNo: "1053" },
-      { id: "s10", name: "James Maina", admNo: "1054" },
-    ],
-    "12A": [
-      { id: "s11", name: "Kevin Omondi", admNo: "0981" },
-      { id: "s12", name: "Lucy Nyambura", admNo: "0982" },
-      { id: "s13", name: "Mark Kariuki", admNo: "0983" },
-      { id: "s14", name: "Naomi Jepkoech", admNo: "0984" },
-    ],
-  },
-  materials: [
-    { id: "mt1", title: "Quadratic equations: worked examples", classId: "11A", kind: "AI-assisted", status: "Awaiting review", when: "Today" },
-    { id: "mt2", title: "Term 3 revision pack: algebra", classId: "11B", kind: "Upload", status: "Published", when: "Yesterday" },
-    { id: "mt3", title: "Circular motion flashcards", classId: "12A", kind: "AI-assisted", status: "Draft", when: "12 Nov" },
-    { id: "mt4", title: "Past paper: Mathematics Paper 2", classId: "11A", kind: "Upload", status: "Published", when: "10 Nov" },
-  ],
-  alerts: [
-    { id: "w1", topic: "Quadratic equations", classId: "11A", detail: "Several learners lost marks on factorisation steps. A short practice set could help." },
-    { id: "w2", topic: "Circular motion", classId: "12A", detail: "Tutor questions show repeated confusion about centripetal force." },
-  ],
-  tutorTopics: [
-    { topic: "Quadratic equations", classId: "11A", sessions: 23 },
-    { topic: "Circular motion", classId: "12A", sessions: 17 },
-    { topic: "Simultaneous equations", classId: "11B", sessions: 12 },
-  ],
-  notices: [
-    { id: "n1", title: "End of term exam timetable released", from: "Head of Institution", when: "Today" },
-    { id: "n2", title: "Staff meeting moved to Friday 3:30 PM", from: "Deputy", when: "Yesterday" },
-  ],
-  aiUsage: { materialsThisTerm: 9, quizAttempts: 214, tutorSessions: 87 },
-  commentsDone: 28,
-  commentsTotal: 42,
+const EMPTY: TeacherData = {
+  classes: [], lessons: [], periodsThisWeek: null, pendingMarks: [], results: [], progress: [],
+  roster: {}, materials: [], alerts: [], tutorTopics: [], notices: [], aiUsage: null,
+  commentsDone: 0, commentsTotal: 0,
 };
 
 const STATUS_LABEL: Record<AttendanceStatus, string> = { P: "Present", A: "Absent", L: "Late", E: "Excused" };
@@ -409,7 +339,10 @@ function buildMenu(badges: { marks: number }): NavGroup[] {
   return [
     {
       group: "Overview",
-      items: [{ key: "dashboard", label: "Dashboard", hint: "Your day at a glance", route: ROUTE.dashboard, icon: "dashboard" }],
+      items: [
+        { key: "dashboard", label: "Dashboard", hint: "Your day at a glance", route: ROUTE.dashboard, icon: "dashboard" },
+        { key: "profile", label: "Profile", hint: "Your profile", route: ROUTE.profile, icon: "students" },
+      ],
     },
     {
       group: "Class management",
@@ -607,7 +540,7 @@ function Header({
                 role="menuitem"
                 onClick={() => {
                   setMenu(false);
-                  onNavigate?.("/profile", "profile");
+                  onNavigate?.(ROUTE.profile, "profile");
                 }}
               >
                 <Icon name="students" size={16} />
@@ -780,6 +713,11 @@ function ClassesCard({ classes, onGo }: { classes: ClassInfo[]; onGo: (route: st
               </tr>
             </thead>
             <tbody>
+              {classes.length === 0 ? (
+                <tr>
+                  <td colSpan={6}>No classes are assigned to you this year.</td>
+                </tr>
+              ) : null}
               {classes.map((c) => (
                 <tr key={c.id}>
                   <td>
@@ -787,14 +725,20 @@ function ClassesCard({ classes, onGo }: { classes: ClassInfo[]; onGo: (route: st
                     <br />
                     <small>{c.subject}</small>
                   </td>
-                  <td className="ss-num">{c.learners}</td>
-                  <td className="ss-num">{c.mean}%</td>
-                  <td className="ss-num">{c.attendance}%</td>
+                  <td className="ss-num">{c.learners ?? "—"}</td>
+                  <td className="ss-num">{c.mean === null ? "—" : `${c.mean}%`}</td>
+                  <td className="ss-num">{c.attendance === null ? "—" : `${c.attendance}%`}</td>
                   <td>
-                    <div className="ss-bar sm" role="progressbar" aria-valuenow={c.marksSubmitted} aria-valuemin={0} aria-valuemax={100} aria-label={`${c.name} marks submitted`}>
+                    {c.marksSubmitted === null ? (
+                      "—"
+                    ) : (
+                      <>
+                        <div className="ss-bar sm" role="progressbar" aria-valuenow={c.marksSubmitted} aria-valuemin={0} aria-valuemax={100} aria-label={`${c.name} marks submitted`}>
                       <i style={{ width: `${c.marksSubmitted}%` }} />
                     </div>
                     <small>{c.marksSubmitted}%</small>
+                      </>
+                    )}
                   </td>
                   <td>
                     <button type="button" className="ss-btn ss-btn-sm" onClick={() => onGo(ROUTE.classes, `class-${c.id}`)}>
@@ -820,7 +764,7 @@ function LessonsCard({
   onGo,
 }: {
   lessons: Lesson[];
-  periodsThisWeek: number;
+  periodsThisWeek: number | null;
   nameOf: (id: string) => string;
   onTakeRegister: (classId: string) => void;
   onGo: (route: string, key: string) => void;
@@ -855,9 +799,9 @@ function LessonsCard({
           ))}
         </ul>
       ) : (
-        <p className="ss-empty">No lessons today.</p>
+        <p className="ss-empty">{periodsThisWeek === null ? "The timetable is not connected yet." : "No lessons today."}</p>
       )}
-      <p className="ss-note">{periodsThisWeek} periods on your timetable this week.</p>
+      {periodsThisWeek !== null ? <p className="ss-note">{periodsThisWeek} periods on your timetable this week.</p> : null}
     </section>
   );
 }
@@ -932,6 +876,8 @@ function AttendanceCard({
         </span>
       </div>
 
+      {learners.length === 0 ? <p className="ss-empty">No learner list is available for this class yet.</p> : null}
+
       <ul className="ss-roster">
         {learners.map((l) => (
           <li key={l.id}>
@@ -960,7 +906,7 @@ function AttendanceCard({
 
       <div className="ss-roster-foot">
         <span className="ss-toolbar-note">{counts.map((c) => `${STATUS_LABEL[c.s]} ${c.n}`).join(" · ")}</span>
-        <button type="button" className="ss-btn ss-btn-primary" onClick={save} disabled={learners.length === 0 || markedCount < learners.length}>
+        <button type="button" className="ss-btn ss-btn-primary" onClick={save} disabled={!onSave || learners.length === 0 || markedCount < learners.length}>
           Save register
         </button>
       </div>
@@ -1013,7 +959,7 @@ function MarksCard({
           ))}
         </ul>
       ) : (
-        <p className="ss-empty">All marks are in. Nothing is waiting.</p>
+        <p className="ss-empty">No pending marks to show.</p>
       )}
       <div className="ss-btn-row" style={{ marginTop: 14 }}>
         <button type="button" className="ss-btn" onClick={() => onGo(ROUTE.marks, "marks-upload")}>
@@ -1255,7 +1201,7 @@ function MaterialsCard({
             <input key={fileKey} className="ss-input" type="file" onChange={(e) => setFile(e.target.files?.[0] ?? null)} />
           </label>
         </div>
-        <button type="submit" className="ss-btn ss-btn-primary" disabled={!file || !title.trim()}>
+        <button type="submit" className="ss-btn ss-btn-primary" disabled={!onUpload || !file || !title.trim()}>
           Upload material
         </button>
         {sent ? (
@@ -1324,7 +1270,7 @@ function GenerateCard({
             ))}
           </select>
         </label>
-        <button type="submit" className="ss-btn ss-btn-primary" disabled={!topic.trim()}>
+        <button type="submit" className="ss-btn ss-btn-primary" disabled={!onGenerate || !topic.trim()}>
           Generate
         </button>
       </form>
@@ -1401,7 +1347,7 @@ function MwalimuCard({
           ))}
         </ul>
       ) : (
-        <p className="ss-empty">No learning gaps flagged right now.</p>
+        <p className="ss-empty">No learning gaps to show.</p>
       )}
 
       <h4 className="ss-h4" style={{ marginTop: 16 }}>
@@ -1415,7 +1361,7 @@ function MwalimuCard({
               <small>{nameOf(t.classId)}</small>
             </div>
             <span className="ss-count">{t.sessions} sessions</span>
-            <button type="button" className="ss-btn ss-btn-sm" onClick={() => assign(t)}>
+            <button type="button" className="ss-btn ss-btn-sm" onClick={() => assign(t)} disabled={!onAssign}>
               Assign
             </button>
           </li>
@@ -1426,9 +1372,11 @@ function MwalimuCard({
           {assigned}
         </p>
       ) : null}
-      <p className="ss-note">
-        This term: {usage.materialsThisTerm} materials generated · {usage.quizAttempts} quiz attempts · {usage.tutorSessions} tutor sessions.
-      </p>
+      {usage ? (
+        <p className="ss-note">
+          This term: {usage.materialsThisTerm} materials generated · {usage.quizAttempts} quiz attempts · {usage.tutorSessions} tutor sessions.
+        </p>
+      ) : null}
     </section>
   );
 }
@@ -1497,7 +1445,7 @@ function AnnouncementsCard({
           ))}
         </select>
         <textarea className="ss-input" value={message} onChange={(e) => setMessage(e.target.value)} placeholder="Write your notice" aria-label="Notice" />
-        <button type="submit" className="ss-btn ss-btn-primary" disabled={!message.trim()}>
+        <button type="submit" className="ss-btn ss-btn-primary" disabled={!onPost || !message.trim()}>
           Post notice
         </button>
         {sent ? (
@@ -1515,7 +1463,7 @@ function AnnouncementsCard({
 /* ------------------------------------------------------------------ */
 
 export default function TeacherDashboard({
-  data = SAMPLE,
+  data = EMPTY,
   user,
   theme = "light",
   isClassTeacher = false,
@@ -1547,7 +1495,7 @@ export default function TeacherDashboard({
   const pendingCount = data.pendingMarks.length;
   const menu = useMemo(() => buildMenu({ marks: pendingCount }), [pendingCount]);
 
-  const totalLearners = sum(data.classes.map((c) => c.learners));
+  const totalLearners = data.classes.some((c) => c.learners === null) ? null : sum(data.classes.map((c) => c.learners ?? 0));
   const registersPending = data.lessons.filter((l) => !l.registerTaken).length;
   const notifications = data.notices.length + data.alerts.length;
 
@@ -1581,11 +1529,17 @@ export default function TeacherDashboard({
             <div className="ss-hero-text">
               <span className="ss-eyebrow">{greeting()}</span>
               <h2>{me.name}</h2>
-              <p>
-                You have <strong>{data.lessons.length} lessons</strong> today and <strong>{registersPending}</strong>{" "}
-                {registersPending === 1 ? "register" : "registers"} still to take. <strong>{data.pendingMarks.length}</strong> marks{" "}
-                {data.pendingMarks.length === 1 ? "entry is" : "entries are"} waiting.
-              </p>
+              {data.periodsThisWeek === null ? (
+                <p>
+                  You teach <strong>{data.classes.length}</strong> {data.classes.length === 1 ? "class" : "classes"} this year.
+                </p>
+              ) : (
+                <p>
+                  You have <strong>{data.lessons.length} lessons</strong> today and <strong>{registersPending}</strong>{" "}
+                  {registersPending === 1 ? "register" : "registers"} still to take. <strong>{data.pendingMarks.length}</strong> marks{" "}
+                  {data.pendingMarks.length === 1 ? "entry is" : "entries are"} waiting.
+                </p>
+              )}
               <div className="ss-hero-btns">
                 <button type="button" className="ss-btn ss-btn-gold" onClick={() => document.getElementById("attendance")?.scrollIntoView({ behavior: "smooth" })}>
                   Take register
@@ -1602,11 +1556,11 @@ export default function TeacherDashboard({
               </div>
               <div>
                 <span>Learners</span>
-                <b>{totalLearners}</b>
+                <b>{totalLearners ?? "—"}</b>
               </div>
               <div>
                 <span>Periods / week</span>
-                <b>{data.periodsThisWeek}</b>
+                <b>{data.periodsThisWeek ?? "—"}</b>
               </div>
             </div>
           </section>

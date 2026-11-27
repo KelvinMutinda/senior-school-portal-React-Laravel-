@@ -4,6 +4,7 @@ import { logout as apiLogout } from '../api/authApi' // adjust the path to where
 
 export const ROUTE = {
   dashboard: '/Teacher/Dashboard',
+  profile:'/Teacher/Profile',
   classes: '/Academics/classes',
   students: '/Students',
   attendance: '/Academics/Attendance',
@@ -30,7 +31,11 @@ interface NavItem {
 const NAV: { heading: string; items: NavItem[] }[] = [
   {
     heading: 'Overview',
-    items: [{ key: 'dashboard', label: 'Dashboard', icon: 'grid' }],
+    items:
+     [
+      { key: 'dashboard', label: 'Dashboard', icon: 'grid' },
+      { key: 'profile', label: 'Profile', icon: 'user' },
+    ],
   },
   {
     heading: 'Class management',
