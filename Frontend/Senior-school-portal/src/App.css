@@ -5715,7 +5715,9 @@ em.up { color: var(--green); } em.down { color: var(--red); }
 .lr-btn.lr-gold { background: #f0c040; border-color: #f0c040; }
 .lr-btn.lr-danger { color: #d92d20; border-color: #f5a5a0; }
 .lr-card { background: #fff; border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
-.lr-searchbar { padding: 12px 20px; background: #f8f9fc; }
+.lr-searchbar { display: flex; flex-wrap: wrap; gap: 10px; padding: 12px 20px; background: #f8f9fc; }
+.lr-searchbar select { padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; font: inherit; background: #fff; }
+.lr-pager { display: flex; justify-content: center; align-items: center; gap: 12px; padding: 12px; font-size: .84rem; }
 .lr-searchbar input { width: 100%; max-width: 420px; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; font: inherit; }
 .lr-banner { background: var(--navy); color: #fff; text-align: center; padding: 14px; font-weight: 800; font-size: .82rem; letter-spacing: .08em; text-transform: uppercase; border-bottom: 2px solid var(--gold); }
 .lr-scroll { overflow-x: auto; }
@@ -5736,3 +5738,20 @@ em.up { color: var(--green); } em.down { color: var(--red); }
 .lr-fields label { display: grid; gap: 4px; font-size: .78rem; font-weight: 600; }
 .lr-fields input { padding: 9px 12px; border: 1px solid #e6e9f0; border-radius: 8px; font: inherit; }
 .lr-actions { justify-content: flex-end; margin-top: 16px; }
+
+/* Fit the table on laptop screens and keep the actions visible */
+.lr-table th, .lr-table td { padding: 10px 8px; }
+.lr-page .lr-btn { white-space: nowrap; }
+.lr-row-actions { gap: 6px; }
+.lr-row-actions .lr-btn { padding: 6px 10px; }
+.lr-who { min-width: 150px; }
+.lr-table th:last-child, .lr-table td:last-child { position: sticky; right: 0; background: #fff; box-shadow: -6px 0 8px -8px rgba(12, 30, 58, .35); }
+.lr-table th:last-child { background: #f8f9fc; }
+.lr-table tbody tr:hover td:last-child { background: #fafbfe; }
+
+/* View learner panel */
+.lr-dialog.lr-wide { width: min(640px, 100%); }
+.lr-details { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin: 8px 0 0; }
+.lr-details dt { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: #7c879c; }
+.lr-details dd { margin: 2px 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.lr-guardian { border: 1px solid #e6e9f0; border-radius: 10px; padding: 12px; margin-bottom: 10px; }

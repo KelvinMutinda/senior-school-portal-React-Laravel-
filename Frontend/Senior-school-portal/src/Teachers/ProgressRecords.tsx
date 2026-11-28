@@ -1,6 +1,7 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { ApiError, apiUrl, authHeaders, clearSession, getUser } from "../api/authApi"; // <- adjust this path to where authApi.ts lives
 
 /* ------------------------------------------------------------------ */
 /* Types                                                               */
@@ -42,6 +43,7 @@ export interface TeacherUser {
 }
 
 export interface ProgressRecordsProps {
+  /** Optional override (for testing). When omitted, the page loads the teacher's classes from the API. */
   data?: ProgressClass[];
   user?: TeacherUser;
   theme?: "light" | "dark";
@@ -50,6 +52,31 @@ export interface ProgressRecordsProps {
   /** Optional. If omitted, react-router's navigate() is used. */
   onNavigate?: (route: string, key: string) => void;
   onLogout?: () => void;
+}
+
+/* ------------------------------------------------------------------ */
+/* API                                                                 */
+/* ------------------------------------------------------------------ */
+
+async function fetchProgress(signal: AbortSignal): Promise<ProgressClass[]> {
+  const res = await fetch(apiUrl("/teacher/progress"), {
+    signal,
+    headers: authHeaders(),
+  });
+
+  if (!res.ok) {
+    let message = "Could not load progress records.";
+    try {
+      const body = await res.json();
+      if (body?.message) message = body.message;
+    } catch {
+      /* response was not JSON */
+    }
+    throw new ApiError(message, res.status);
+  }
+
+  const json = await res.json();
+  return (json.classes ?? []) as ProgressClass[];
 }
 
 /* ------------------------------------------------------------------ */
@@ -79,59 +106,6 @@ const ROUTE = {
 const TREND_STEP = 3; // points gained or lost over the last 3 scored assessments to count as improving or declining
 const DROP_ALERT = 8; // a drop of this many points flags the learner as needing attention
 const LOW_MARK = 40; // a latest score below this flags the learner as needing attention
-
-/* ------------------------------------------------------------------ */
-/* Sample data (replace with API results)                              */
-/* ------------------------------------------------------------------ */
-
-const ASSESSMENTS: AssessmentInfo[] = [
-  { id: "a1", name: "T2 Exam", date: "2026-08-14" },
-  { id: "a2", name: "CAT 1", date: "2026-09-09" },
-  { id: "a3", name: "Mid-term", date: "2026-09-30" },
-  { id: "a4", name: "CAT 2", date: "2026-10-28" },
-  { id: "a5", name: "CAT 3", date: "2026-11-16" },
-];
-
-const SAMPLE: ProgressClass[] = [
-  {
-    id: "11A",
-    name: "Grade 11A",
-    subject: "Mathematics",
-    assessments: ASSESSMENTS,
-    learners: [
-      { id: "s1", name: "Achieng Otieno", admNo: "1021", scores: [72, 75, 78, 80, 84] },
-      { id: "s2", name: "Brian Kiptoo", admNo: "1022", scores: [48, 45, 41, 38, 35] },
-      { id: "s3", name: "Cynthia Mwende", admNo: "1023", scores: [61, 63, 62, 64, 63] },
-      { id: "s4", name: "Daniel Njoroge", admNo: "1024", scores: [55, 58, 60, 66, 70] },
-      { id: "s5", name: "Esther Wambui", admNo: "1025", scores: [40, 44, 43, 47, 52] },
-      { id: "s6", name: "Felix Mutua", admNo: "1026", scores: [63, 64, null, 66, 65] },
-    ],
-  },
-  {
-    id: "11B",
-    name: "Grade 11B",
-    subject: "Mathematics",
-    assessments: ASSESSMENTS,
-    learners: [
-      { id: "s7", name: "Grace Akinyi", admNo: "1051", scores: [70, 66, 68, 65, 62] },
-      { id: "s8", name: "Hassan Ali", admNo: "1052", scores: [55, 54, 56, 55, 55] },
-      { id: "s9", name: "Irene Chebet", admNo: "1053", scores: [38, 35, 36, 33, 30] },
-      { id: "s10", name: "James Maina", admNo: "1054", scores: [60, 58, 62, 64, 68] },
-    ],
-  },
-  {
-    id: "12A",
-    name: "Grade 12A",
-    subject: "Physics",
-    assessments: ASSESSMENTS,
-    learners: [
-      { id: "s11", name: "Kevin Omondi", admNo: "0981", scores: [66, 68, 70, 71, 74] },
-      { id: "s12", name: "Lucy Nyambura", admNo: "0982", scores: [58, 60, 61, 61, 62] },
-      { id: "s13", name: "Mark Kariuki", admNo: "0983", scores: [72, 70, 66, 63, 60] },
-      { id: "s14", name: "Naomi Jepkoech", admNo: "0984", scores: [null, null, 45, 52, 58] },
-    ],
-  },
-];
 
 /* ------------------------------------------------------------------ */
 /* Analysis helpers                                                    */
@@ -724,27 +698,68 @@ function TrendChart({ labels, means }: { labels: string[]; means: (number | null
 /* Page                                                                */
 /* ------------------------------------------------------------------ */
 
-export default function ProgressRecords({ data = SAMPLE, user, theme = "light", onExport, onNavigate, onLogout }: ProgressRecordsProps) {
+type LoadStatus = "loading" | "ready" | "error";
+
+export default function ProgressRecords({ data, user, theme = "light", onExport, onNavigate, onLogout }: ProgressRecordsProps) {
   const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
 
-  const initialClass = data.find((c) => c.id === params.get("class"))?.id ?? data[0]?.id ?? "";
+  /* Data loading */
+  const [classes, setClasses] = useState<ProgressClass[]>(data ?? []);
+  const [status, setStatus] = useState<LoadStatus>(data ? "ready" : "loading");
+  const [loadError, setLoadError] = useState("");
+  const [reloadKey, setReloadKey] = useState(0);
+
+  useEffect(() => {
+    if (data) {
+      setClasses(data);
+      setStatus("ready");
+      return;
+    }
+
+    const controller = new AbortController();
+    setStatus("loading");
+    setLoadError("");
+
+    fetchProgress(controller.signal)
+      .then((result) => {
+        setClasses(result);
+        setStatus("ready");
+      })
+      .catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === "AbortError") return;
+        if (err instanceof ApiError && err.status === 401) {
+          clearSession(); // token is missing, expired or revoked
+          onLogout?.();
+        }
+        setLoadError(err instanceof Error ? err.message : "Could not load progress records.");
+        setStatus("error");
+      });
+
+    return () => controller.abort();
+    // onLogout is intentionally left out so a new function identity does not refetch
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data, reloadKey]);
 
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [classId, setClassId] = useState(initialClass);
+  const [selectedId, setSelectedId] = useState(params.get("class") ?? "");
   const [sort, setSort] = useState<SortKey>("name");
   const [filter, setFilter] = useState<Filter>("all");
   const [q, setQ] = useState("");
   const [allClasses, setAllClasses] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
 
-  const me: TeacherUser = user ?? { name: "Teacher", roleLabel: "Subject teacher" };
+  const signedIn = getUser();
+  const me: TeacherUser = user ?? { name: signedIn?.name ?? "Teacher", roleLabel: "Subject teacher" };
   const go = (route: string, key: string) => {
     if (onNavigate) onNavigate(route, key);
     else navigate(route);
   };
 
-  const cls = data.find((c) => c.id === classId) ?? null;
+  // Falls back to the first class when the URL's class is missing or not one of this teacher's
+  const cls = classes.find((c) => c.id === selectedId) ?? classes[0] ?? null;
+  const classId = cls?.id ?? "";
+
   const analysed = useMemo(() => (cls ? cls.learners.map(analyse) : []), [cls]);
   const means = useMemo(() => (cls ? classMeans(cls) : []), [cls]);
 
@@ -779,7 +794,7 @@ export default function ProgressRecords({ data = SAMPLE, user, theme = "light", 
   const meanChange = latestMean !== null && prevMean !== null ? change(latestMean - prevMean, " pts") : null;
 
   const changeSelectClass = (id: string) => {
-    setClassId(id);
+    setSelectedId(id);
     setFilter("all");
     setNotice(null);
     setParams({ class: id }, { replace: true });
@@ -788,7 +803,7 @@ export default function ProgressRecords({ data = SAMPLE, user, theme = "light", 
   /* Export */
   const exportCsv = () => {
     const stamp = todayISO();
-    const targets = allClasses ? data : cls ? [cls] : [];
+    const targets = allClasses ? classes : cls ? [cls] : [];
     if (!targets.length) return;
 
     const blocks: string[] = [];
@@ -838,7 +853,7 @@ export default function ProgressRecords({ data = SAMPLE, user, theme = "light", 
           title="Progress records"
           dateLabel={longDate(now)}
           user={me}
-          action={{ label: "Export CSV", onClick: exportCsv, disabled: !cls }}
+          action={{ label: "Export CSV", onClick: exportCsv, disabled: status !== "ready" || !cls }}
           onOpenMenu={() => setSidebarOpen(true)}
           onSearch={setQ}
           onGo={go}
@@ -852,7 +867,7 @@ export default function ProgressRecords({ data = SAMPLE, user, theme = "light", 
           </div>
 
           {/* Shown on paper only */}
-          {cls ? (
+          {status === "ready" && cls ? (
             <div className="pr-printhead">
               <h2>Progress records</h2>
               <p>
@@ -862,7 +877,22 @@ export default function ProgressRecords({ data = SAMPLE, user, theme = "light", 
             </div>
           ) : null}
 
-          {!cls ? (
+          {status === "loading" ? (
+            <div className="ss-card pr-empty" role="status" aria-live="polite">
+              <Icon name="progress" size={28} />
+              <h3>Loading progress records</h3>
+              <p>Fetching your classes and marks.</p>
+            </div>
+          ) : status === "error" ? (
+            <div className="ss-card pr-empty" role="alert">
+              <Icon name="close" size={28} />
+              <h3>Could not load progress records</h3>
+              <p>{loadError}</p>
+              <button type="button" className="ss-btn" onClick={() => setReloadKey((k) => k + 1)}>
+                Try again
+              </button>
+            </div>
+          ) : !cls ? (
             <div className="ss-card pr-empty">
               <Icon name="progress" size={28} />
               <h3>No classes assigned</h3>
@@ -878,7 +908,7 @@ export default function ProgressRecords({ data = SAMPLE, user, theme = "light", 
                 <label className="ss-lab">
                   Class
                   <select className="ss-input" value={classId} onChange={(e) => changeSelectClass(e.target.value)}>
-                    {data.map((c) => (
+                    {classes.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.name} · {c.subject}
                       </option>

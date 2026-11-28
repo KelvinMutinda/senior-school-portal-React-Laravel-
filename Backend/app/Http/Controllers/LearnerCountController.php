@@ -3,13 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Models\Learner;
-use App\Models\StaffProfile;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 
 class LearnerCountController extends Controller
@@ -28,14 +28,17 @@ class LearnerCountController extends Controller
         'birthCertNo' => 'birth_cert_no',
     ];
 
+    // Columns that are never sent to the View panel. Add anything teachers should not see.
+    private const NEVER_SHOW = ['id', 'password', 'remember_token', 'pivot', 'created_at', 'updated_at', 'deleted_at'];
+
     private const STREAM_COLUMN = 'stream_id'; // how a learner is linked to a class
 
-    /** GET /learners : only learners in the teacher's classes this year */
+    /** GET /learners : the whole school */
     public function index(Request $request): JsonResponse
     {
         $streams = $this->streams($request);
 
-        $learners = $this->mine($streams)
+        $learners = Learner::query()
             ->orderBy(self::COLUMNS['firstName'])
             ->orderBy(self::COLUMNS['lastName'])
             ->get()
@@ -44,11 +47,34 @@ class LearnerCountController extends Controller
         return response()->json(['learners' => $learners]);
     }
 
+    /** GET /learners/{id} : the full record plus parents and guardians */
+    public function show(Request $request, string $id): JsonResponse
+    {
+        $this->streams($request); // teachers only
+        $learner = Learner::findOrFail($id);
+
+        $guardians = $learner->guardians()
+            ->withPivot('relationship', 'is_primary')
+            ->get()
+            ->sortByDesc(fn ($g) => (int) $g->pivot->is_primary)
+            ->map(fn ($g) => [
+                'relationship' => $g->pivot->relationship,
+                'isPrimary' => (bool) $g->pivot->is_primary,
+                'details' => $this->details($g->attributesToArray()),
+            ])
+            ->values();
+
+        return response()->json([
+            'details' => $this->details($learner->attributesToArray()),
+            'guardians' => $guardians,
+        ]);
+    }
+
     /** PUT /learners/{id} */
     public function update(Request $request, string $id): JsonResponse
     {
         $streams = $this->streams($request);
-        $learner = $this->mine($streams)->findOrFail($id);
+        $learner = Learner::findOrFail($id);
         $table = $learner->getTable();
 
         $unique = fn (string $field) => Rule::unique($table, self::COLUMNS[$field])
@@ -70,6 +96,7 @@ class LearnerCountController extends Controller
             }
         }
         $learner->save();
+        Log::info('Learner updated', ['learner' => $learner->getKey(), 'by' => $request->user()->id]);
 
         return response()->json(['learner' => $this->present($learner, $streams)]);
     }
@@ -77,7 +104,8 @@ class LearnerCountController extends Controller
     /** DELETE /learners/{id} : soft delete only, so the record can be restored */
     public function destroy(Request $request, string $id): JsonResponse
     {
-        $learner = $this->mine($this->streams($request))->findOrFail($id);
+        $this->streams($request); // teachers only
+        $learner = Learner::findOrFail($id);
 
         abort_unless(
             in_array(SoftDeletes::class, class_uses_recursive($learner), true),
@@ -86,38 +114,43 @@ class LearnerCountController extends Controller
         );
 
         $learner->delete();
+        Log::info('Learner removed', ['learner' => $learner->getKey(), 'by' => $request->user()->id]);
 
         return response()->json(['message' => 'Learner removed.']);
     }
 
-    /** The teacher's streams this year, keyed by stream id. */
+    /** Teachers only. Returns every stream in the school, keyed by id. */
     private function streams(Request $request)
     {
-        $user = $request->user();
-        abort_unless(strtoupper($user->role) === 'TEACHER', 403, 'This page is for teachers.');
+        abort_unless(strtoupper($request->user()->role) === 'TEACHER', 403, 'This page is for teachers.');
 
-        $teacher = StaffProfile::where('user_id', $user->id)->first();
-        abort_if(! $teacher, 404, 'No staff record is linked to this account.');
-
-        $yearId = DB::table('academic_years')->where('is_current', true)->value('id');
-
-        return DB::table('teaching_assignments as ta')
-            ->join('streams as st', 'st.id', '=', 'ta.stream_id')
+        return DB::table('streams as st')
             ->join('grades as g', 'g.id', '=', 'st.grade_id')
-            ->where('ta.staff_profile_id', $teacher->id)
-            ->where('ta.academic_year_id', $yearId)
             ->get(['st.id', 'st.name', 'g.level'])
             ->keyBy('id');
     }
 
-    private function mine($streams): Builder
+    /** Turns every filled or empty column into a label and value, skipping internal ones. */
+    private function details(array $attributes): array
     {
-        return Learner::query()->whereIn(self::STREAM_COLUMN, $streams->keys());
+        return collect($attributes)
+            ->reject(fn ($value, $key) => in_array($key, self::NEVER_SHOW, true)
+                || str_ends_with($key, '_id')
+                || is_array($value))
+            ->map(fn ($value, $key) => [
+                'label' => Str::headline($key),
+                'value' => is_bool($value) ? ($value ? 'Yes' : 'No') : $value,
+            ])
+            ->values()
+            ->all();
     }
 
     private function present(Learner $learner, $streams): array
     {
-        $row = ['id' => (string) $learner->getKey()];
+        $row = [
+            'id' => (string) $learner->getKey(),
+            'admissionNo' => $learner->admission_no,
+        ];
         foreach (self::COLUMNS as $field => $column) {
             $row[$field] = $learner->{$column};
         }
@@ -126,6 +159,7 @@ class LearnerCountController extends Controller
         $stream = $streams->get($learner->{self::STREAM_COLUMN});
         $row['grade'] = $stream ? (int) $stream->level : null;
         $row['className'] = $stream ? $stream->level.$stream->name : null;
+        $row['stream'] = $stream ? (string) $stream->name : null;
 
         return $row;
     }

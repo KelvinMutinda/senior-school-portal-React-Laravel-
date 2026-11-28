@@ -7,6 +7,7 @@ import { apiUrl, authHeaders } from "../api/authApi"; // adjust the path if need
 
 interface Learner {
   id: string;
+  admissionNo: string | null;
   firstName: string;
   middleName: string | null;
   lastName: string;
@@ -16,6 +17,7 @@ interface Learner {
   birthCertNo: string | null;
   grade: number | null;
   className: string | null;
+  stream: string | null;
 }
 
 const FIELDS = [
@@ -31,6 +33,7 @@ const FIELDS = [
 type Form = Record<(typeof FIELDS)[number]["key"], string>;
 
 const fullName = (l: Learner) => [l.firstName, l.middleName, l.lastName].filter(Boolean).join(" ");
+const PAGE_SIZE = 50;
 const initials = (l: Learner) => `${l.firstName?.[0] ?? ""}${l.lastName?.[0] ?? ""}`.toUpperCase();
 
 /** Calls the API and turns failures into a readable message. */
@@ -51,8 +54,8 @@ function downloadCsv(rows: Learner[], name: string) {
   // A leading = + - @ would be run as a formula by Excel, so it is neutralised.
   const esc = (v: unknown) => `"${String(v ?? "").replace(/^[=+\-@]/, "'$&").replace(/"/g, '""')}"`;
   const lines = [
-    ["Assessment no", "UPI no", "Full name", "Class", "Date of birth", "Birth cert no"],
-    ...rows.map((l) => [l.assessmentNo, l.upiNo, fullName(l), l.className, l.dateOfBirth, l.birthCertNo]),
+    ["Admission no", "Assessment no", "UPI no", "Full name", "Class", "Date of birth", "Birth cert no"],
+    ...rows.map((l) => [l.admissionNo, l.assessmentNo, l.upiNo, fullName(l), l.className, l.dateOfBirth, l.birthCertNo]),
   ].map((r) => r.map(esc).join(","));
   const url = URL.createObjectURL(new Blob(["﻿" + lines.join("\n")], { type: "text/csv;charset=utf-8" }));
   const a = document.createElement("a");
@@ -60,6 +63,84 @@ function downloadCsv(rows: Learner[], name: string) {
   a.download = name;
   a.click();
   URL.revokeObjectURL(url);
+}
+
+interface Detail {
+  label: string;
+  value: string | number | null;
+}
+
+interface LearnerRecord {
+  details: Detail[];
+  guardians: { relationship: string | null; isPrimary: boolean; details: Detail[] }[];
+}
+
+function DetailList({ items }: { items: Detail[] }) {
+  return (
+    <dl className="lr-details">
+      {items.map((d) => {
+        const text = d.value === null || d.value === "" ? "–" : String(d.value);
+        const isPhone = /phone|mobile|contact|tel/i.test(d.label) && text !== "–";
+        return (
+          <div key={d.label}>
+            <dt>{d.label}</dt>
+            <dd>{isPhone ? <a href={`tel:${text.replace(/\s+/g, "")}`}>{text}</a> : text}</dd>
+          </div>
+        );
+      })}
+    </dl>
+  );
+}
+
+function ViewDialog({ learner, onClose, onEdit }: { learner: Learner; onClose: () => void; onEdit: () => void }) {
+  const [record, setRecord] = useState<LearnerRecord | null>(null);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    let live = true;
+    api<LearnerRecord>(`/learners/${learner.id}`)
+      .then((r) => live && setRecord(r))
+      .catch((e: Error) => live && setError(e.message));
+    return () => {
+      live = false;
+    };
+  }, [learner.id]);
+
+  return (
+    <div className="lr-overlay" onKeyDown={(e) => e.key === "Escape" && onClose()}>
+      <div className="lr-dialog lr-wide" role="dialog" aria-modal="true" aria-label={`${fullName(learner)} details`}>
+        <div className="lr-who">
+          <span className="lr-avatar" aria-hidden="true">{initials(learner)}</span>
+          <div>
+            <h3>{fullName(learner)}</h3>
+            <small>{learner.className ?? "No class"} · Admission no {learner.admissionNo ?? "–"}</small>
+          </div>
+        </div>
+
+        {error && <p className="lr-error" role="alert">{error}</p>}
+        {!record && !error && <p role="status">Loading details…</p>}
+        {record && (
+          <>
+            <h4>Learner details</h4>
+            <DetailList items={record.details} />
+            <h4>Parents and guardians</h4>
+            {record.guardians.length === 0 && <p>No parent or guardian is recorded.</p>}
+            {record.guardians.map((g, i) => (
+              <div className="lr-guardian" key={i}>
+                <strong>{g.relationship || "Guardian"}{g.isPrimary ? " (primary)" : ""}</strong>
+                <DetailList items={g.details} />
+              </div>
+            ))}
+          </>
+        )}
+
+        <div className="lr-actions">
+          <button type="button" className="lr-btn" onClick={onClose} autoFocus>Close</button>
+          <button type="button" className="lr-btn lr-gold" onClick={onEdit}>Edit</button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function EditDialog({ learner, onClose, onSaved }: { learner: Learner; onClose: () => void; onSaved: (l: Learner) => void }) {
@@ -116,8 +197,11 @@ function Students() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [q, setQ] = useState(params.get("q") ?? "");
-  const [picked, setPicked] = useState<number | null>(null);
+  const [grade, setGrade] = useState<"all" | number>("all");
+  const [stream, setStream] = useState("all");
+  const [page, setPage] = useState(1);
   const [editing, setEditing] = useState<Learner | null>(null);
+  const [viewing, setViewing] = useState<Learner | null>(null);
   const [removing, setRemoving] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -140,11 +224,18 @@ function Students() {
     () => [...new Set(learners.map((l) => l.grade).filter((g): g is number => g !== null))].sort((a, b) => a - b),
     [learners],
   );
-  const grade = picked !== null && grades.includes(picked) ? picked : (grades[0] ?? null);
-  const inGrade = learners.filter((l) => l.grade === grade);
+  const streams = useMemo(
+    () =>
+      [...new Set(learners.filter((l) => grade === "all" || l.grade === grade).map((l) => l.stream).filter((v): v is string => !!v))].sort(),
+    [learners, grade],
+  );
+  const inView = learners.filter((l) => (grade === "all" || l.grade === grade) && (stream === "all" || l.stream === stream));
   const needle = q.trim().toLowerCase();
-  const shown = inGrade.filter((l) => `${fullName(l)} ${l.assessmentNo ?? ""} ${l.upiNo ?? ""}`.toLowerCase().includes(needle));
-  const title = grade === null ? "Learners" : `Grade ${grade} Learners`;
+  const shown = inView.filter((l) => `${fullName(l)} ${l.admissionNo ?? ""} ${l.assessmentNo ?? ""} ${l.upiNo ?? ""}`.toLowerCase().includes(needle));
+  const pages = Math.max(1, Math.ceil(shown.length / PAGE_SIZE));
+  const current = Math.min(page, pages);
+  const start = (current - 1) * PAGE_SIZE;
+  const label = [grade === "all" ? "All grades" : `Grade ${grade}`, stream === "all" ? "" : `Stream ${stream}`].filter(Boolean).join(" · ");
 
   const remove = async (l: Learner) => {
     if (!window.confirm(`Remove ${fullName(l)}? They will no longer appear in learner lists.`)) return;
@@ -175,22 +266,12 @@ function Students() {
         </header>
 
         <main className="ss-content lr-page">
-          {grades.length > 1 && (
-            <div className="lr-tabs" role="group" aria-label="Grade">
-              {grades.map((g) => (
-                <button key={g} type="button" className={`lr-btn${g === grade ? " is-on" : ""}`} aria-pressed={g === grade} onClick={() => setPicked(g)}>
-                  Grade {g}
-                </button>
-              ))}
-            </div>
-          )}
-
           <div className="lr-head">
-            <h2>{title}</h2>
-            {!loading && <span className="lr-count">{inGrade.length} {inGrade.length === 1 ? "student" : "students"}</span>}
+            <h2>{label} Learners</h2>
+            {!loading && <span className="lr-count">{shown.length} {shown.length === 1 ? "student" : "students"}</span>}
             <div className="lr-head-actions">
               <button type="button" className="lr-btn" onClick={() => navigate("/Register/Learner")}>Register learner</button>
-              <button type="button" className="lr-btn lr-gold" disabled={!shown.length} onClick={() => downloadCsv(shown, `grade-${grade}-learners.csv`)}>
+              <button type="button" className="lr-btn lr-gold" disabled={!shown.length} onClick={() => downloadCsv(shown, `${label.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}-learners.csv`)}>
                 Download Learners List
               </button>
             </div>
@@ -204,15 +285,32 @@ function Students() {
 
           <section className="lr-card" aria-busy={loading}>
             <div className="lr-searchbar">
-              <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search by name, assessment no, or UPI…" aria-label="Search learners" />
+              <input type="search" value={q} onChange={(e) => { setQ(e.target.value); setPage(1); }} placeholder="Search by name, admission no, assessment no, or UPI…" aria-label="Search learners" />
+              <select
+                value={grade}
+                aria-label="Grade"
+                onChange={(e) => {
+                  setGrade(e.target.value === "all" ? "all" : Number(e.target.value));
+                  setStream("all");
+                  setPage(1);
+                }}
+              >
+                <option value="all">All grades</option>
+                {grades.map((g) => <option key={g} value={g}>Grade {g}</option>)}
+              </select>
+              <select value={stream} aria-label="Stream" onChange={(e) => { setStream(e.target.value); setPage(1); }}>
+                <option value="all">All streams</option>
+                {streams.map((v) => <option key={v} value={v}>{v}</option>)}
+              </select>
             </div>
-            <div className="lr-banner">{grade === null ? "Enrolled learners" : `Grade ${grade} — enrolled learners`}</div>
+            <div className="lr-banner">{label} — enrolled learners</div>
 
             <div className="lr-scroll">
               <table className="lr-table">
                 <thead>
                   <tr>
                     <th>#</th>
+                    <th>Admission no</th>
                     <th>Assessment no</th>
                     <th>UPI no</th>
                     <th>Full name</th>
@@ -225,14 +323,15 @@ function Students() {
                 <tbody>
                   {loading || !shown.length ? (
                     <tr>
-                      <td colSpan={8} className="lr-center">
+                      <td colSpan={9} className="lr-center">
                         {loading ? "Loading learners…" : needle ? "No learner matches your search." : "No learners to show."}
                       </td>
                     </tr>
                   ) : (
-                    shown.map((l, i) => (
+                    shown.slice(start, start + PAGE_SIZE).map((l, i) => (
                       <tr key={l.id}>
-                        <td>{i + 1}</td>
+                        <td>{start + i + 1}</td>
+                        <td>{chip(l.admissionNo)}</td>
                         <td>{chip(l.assessmentNo)}</td>
                         <td>{chip(l.upiNo)}</td>
                         <td>
@@ -246,6 +345,7 @@ function Students() {
                         <td>{chip(l.birthCertNo)}</td>
                         <td>
                           <div className="lr-row-actions">
+                            <button type="button" className="lr-btn" onClick={() => setViewing(l)}>View</button>
                             <button type="button" className="lr-btn" onClick={() => setEditing(l)}>✎ Edit</button>
                             <button type="button" className="lr-btn lr-danger" disabled={removing === l.id} onClick={() => void remove(l)}>
                               {removing === l.id ? "Removing…" : "Remove"}
@@ -258,9 +358,28 @@ function Students() {
                 </tbody>
               </table>
             </div>
+            {pages > 1 && (
+              <div className="lr-pager">
+                <button type="button" className="lr-btn" disabled={current === 1} onClick={() => setPage(current - 1)}>Previous</button>
+                <span>Page {current} of {pages}</span>
+                <button type="button" className="lr-btn" disabled={current === pages} onClick={() => setPage(current + 1)}>Next</button>
+              </div>
+            )}
           </section>
         </main>
       </div>
+
+      {viewing && (
+        <ViewDialog
+          key={viewing.id}
+          learner={viewing}
+          onClose={() => setViewing(null)}
+          onEdit={() => {
+            setEditing(viewing);
+            setViewing(null);
+          }}
+        />
+      )}
 
       {editing && (
         <EditDialog
