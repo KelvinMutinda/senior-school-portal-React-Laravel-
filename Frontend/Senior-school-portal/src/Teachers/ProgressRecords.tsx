@@ -30,7 +30,7 @@ export interface ProgressClass {
 }
 
 export interface ExportEvent {
-  format: "csv" | "print";
+  format: "csv" | "pdf" | "print";
   scope: "class" | "all";
   classId: string;
   learners: number;
@@ -108,6 +108,50 @@ const DROP_ALERT = 8; // a drop of this many points flags the learner as needing
 const LOW_MARK = 40; // a latest score below this flags the learner as needing attention
 
 /* ------------------------------------------------------------------ */
+/* Performance levels (CBE senior school scale; edit to match yours)   */
+/* ------------------------------------------------------------------ */
+
+type LevelTone = "a" | "b" | "c" | "d";
+
+interface Level {
+  code: string;
+  label: string;
+  min: number; // lowest percentage that earns this level
+  points: number;
+  tone: LevelTone;
+}
+
+/** Highest level first. A score gets the first level whose min it reaches. */
+const LEVELS: Level[] = [
+  { code: "EE1", label: "Exceeding Expectation 1", min: 90, points: 8, tone: "a" },
+  { code: "EE2", label: "Exceeding Expectation 2", min: 75, points: 7, tone: "a" },
+  { code: "ME1", label: "Meeting Expectation 1", min: 58, points: 6, tone: "b" },
+  { code: "ME2", label: "Meeting Expectation 2", min: 41, points: 5, tone: "b" },
+  { code: "AE1", label: "Approaching Expectation 1", min: 31, points: 4, tone: "c" },
+  { code: "AE2", label: "Approaching Expectation 2", min: 21, points: 3, tone: "c" },
+  { code: "BE1", label: "Below Expectation 1", min: 11, points: 2, tone: "d" },
+  { code: "BE2", label: "Below Expectation 2", min: 0, points: 1, tone: "d" },
+];
+
+function levelOf(score: number): Level {
+  return LEVELS.find((l) => score >= l.min) ?? LEVELS[LEVELS.length - 1];
+}
+
+/** "90-100%", "75-89%" ... */
+function levelRange(i: number): string {
+  const top = i === 0 ? 100 : LEVELS[i - 1].min - 1;
+  return `${LEVELS[i].min}-${top}%`;
+}
+
+/** PDF cell fill colours per tone (light shades) */
+const TONE_RGB: Record<LevelTone, [number, number, number]> = {
+  a: [209, 242, 224],
+  b: [215, 230, 250],
+  c: [255, 236, 200],
+  d: [250, 215, 215],
+};
+
+/* ------------------------------------------------------------------ */
 /* Analysis helpers                                                    */
 /* ------------------------------------------------------------------ */
 
@@ -164,7 +208,14 @@ function classMeans(c: ProgressClass): (number | null)[] {
   });
 }
 
-const tone = (score: number) => (score >= 70 ? "a" : score >= 50 ? "b" : score >= 40 ? "c" : "d");
+const lastOf = (xs: (number | null)[]): number | null => {
+  for (let i = xs.length - 1; i >= 0; i--) {
+    const v = xs[i];
+    if (v !== null && v !== undefined) return v;
+  }
+  return null;
+};
+
 const signed = (d: number) => `${d > 0 ? "+" : ""}${Math.round(d * 10) / 10}`;
 
 type Kind = "up" | "down" | "flat";
@@ -191,8 +242,14 @@ const longDate = (d: Date) => d.toLocaleDateString("en-KE", { weekday: "long", d
 const shortDate = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString("en-KE", { day: "numeric", month: "short" });
 
 /* ------------------------------------------------------------------ */
-/* CSV export                                                          */
+/* Export (CSV and PDF)                                                */
 /* ------------------------------------------------------------------ */
+
+interface ExportItem {
+  c: ProgressClass;
+  rows: Row[];
+  note?: string;
+}
 
 /** Quotes a CSV cell. Text starting with = + - @ is prefixed so spreadsheets never run it as a formula. */
 function csvCell(v: string | number | null | undefined): string {
@@ -206,7 +263,7 @@ const csvLine = (cells: (string | number | null | undefined)[]) => cells.map(csv
 
 function csvBlock(c: ProgressClass, rows: Row[], stamp: string, filterNote?: string): string {
   const means = classMeans(c);
-  const lastMean = [...means].reverse().find((m): m is number => m !== null);
+  const lastMean = lastOf(means);
   const lines: string[] = [
     csvLine(["Progress records"]),
     csvLine(["Class", c.name]),
@@ -215,7 +272,7 @@ function csvBlock(c: ProgressClass, rows: Row[], stamp: string, filterNote?: str
   ];
   if (filterNote) lines.push(csvLine(["Filter", filterNote]));
   lines.push("");
-  lines.push(csvLine(["Adm No", "Learner", ...c.assessments.map((a) => `${a.name} (${a.date})`), "Latest", `Change (last 3, pts)`, "Trend", "Needs attention"]));
+  lines.push(csvLine(["Adm No", "Learner", ...c.assessments.map((a) => `${a.name} (${a.date})`), "Latest", "Latest level", `Change (last 3, pts)`, "Trend", "Needs attention"]));
   rows.forEach((r) => {
     lines.push(
       csvLine([
@@ -223,13 +280,14 @@ function csvBlock(c: ProgressClass, rows: Row[], stamp: string, filterNote?: str
         r.name,
         ...c.assessments.map((_, i) => r.scores[i] ?? ""),
         r.latest ?? "",
+        r.latest === null ? "" : levelOf(r.latest).code,
         r.delta === null ? "" : Math.round(r.delta * 10) / 10,
         TREND_LABEL[r.trend],
         r.attention ? "Yes" : "No",
       ]),
     );
   });
-  lines.push(csvLine(["", "Class mean", ...means.map((m) => m ?? ""), lastMean ?? "", "", "", ""]));
+  lines.push(csvLine(["", "Class mean", ...means.map((m) => m ?? ""), lastMean ?? "", lastMean === null ? "" : levelOf(lastMean).code, "", "", ""]));
   return lines.join("\r\n");
 }
 
@@ -243,6 +301,114 @@ function downloadCsv(filename: string, text: string) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/** Builds a landscape A4 PDF (one class per page set) and downloads it. The libraries load only when needed. */
+async function downloadPdf(filename: string, items: ExportItem[], meta: { teacher: string; printed: string }) {
+  const [{ jsPDF }, autoTableModule] = await Promise.all([import("jspdf"), import("jspdf-autotable")]);
+  const autoTable = autoTableModule.default;
+
+  const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+
+  items.forEach(({ c, rows, note }, idx) => {
+    if (idx > 0) doc.addPage();
+
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(16);
+    doc.text("Progress records", 14, 16);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(10);
+    doc.text(`${c.name} - ${c.subject}`, 14, 23);
+    doc.text(`Teacher: ${meta.teacher}    Printed: ${meta.printed}`, 14, 28);
+    if (note) doc.text(`Showing: ${note}`, 14, 33);
+
+    const nA = c.assessments.length;
+    const means = classMeans(c);
+    const lastMean = lastOf(means);
+
+    const head = [["Adm", "Learner", ...c.assessments.map((a) => `${a.name}\n${shortDate(a.date)}`), "Latest", "Level", "Trend"]];
+
+    const body = rows.map((r) => [
+      r.admNo,
+      r.name,
+      ...c.assessments.map((_, i) => {
+        const s = r.scores[i];
+        return s === null || s === undefined ? "-" : `${s} ${levelOf(s).code}`;
+      }),
+      r.latest === null ? "-" : `${r.latest}%`,
+      r.latest === null ? "-" : levelOf(r.latest).code,
+      r.delta === null ? TREND_LABEL[r.trend] : `${TREND_LABEL[r.trend]} ${signed(r.delta)}`,
+    ]);
+
+    const foot = [
+      [
+        "",
+        "Class mean",
+        ...means.map((m) => (m === null ? "-" : `${m}% ${levelOf(m).code}`)),
+        lastMean === null ? "-" : `${lastMean}%`,
+        lastMean === null ? "-" : levelOf(lastMean).code,
+        "",
+      ],
+    ];
+
+    autoTable(doc, {
+      startY: note ? 37 : 32,
+      head,
+      body,
+      foot,
+      theme: "grid",
+      showFoot: "lastPage",
+      margin: { left: 14, right: 14, bottom: 16 },
+      styles: { fontSize: 8, cellPadding: 1.8, valign: "middle" },
+      headStyles: { fillColor: [11, 27, 51], textColor: 255, halign: "center" },
+      footStyles: { fillColor: [238, 241, 246], textColor: 20, fontStyle: "bold" },
+      columnStyles: { 0: { cellWidth: 16 }, 1: { cellWidth: 46 } },
+      didParseCell: (data) => {
+        if (data.section === "body") {
+          const row = rows[data.row.index];
+          if (data.column.index >= 2 && data.column.index < 2 + nA) {
+            const s = row.scores[data.column.index - 2];
+            if (s !== null && s !== undefined) data.cell.styles.fillColor = TONE_RGB[levelOf(s).tone];
+            data.cell.styles.halign = "center";
+          }
+          if (data.column.index === 1 && row.attention) {
+            data.cell.styles.textColor = [160, 40, 40];
+            data.cell.styles.fontStyle = "bold";
+          }
+        }
+        if ((data.section === "body" || data.section === "foot") && data.column.index >= 2 && data.column.index < 2 + nA + 2) {
+          data.cell.styles.halign = "center";
+        }
+      },
+    });
+
+    // Levels key under the table
+    const finalY = (doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? 40;
+    let y = finalY + 7;
+    if (y > pageH - 22) {
+      doc.addPage();
+      y = 18;
+    }
+    doc.setFontSize(8);
+    doc.setFont("helvetica", "bold");
+    doc.text("Performance levels", 14, y);
+    doc.setFont("helvetica", "normal");
+    const key = LEVELS.map((l, i) => `${l.code} ${levelRange(i)}`).join("   |   ");
+    doc.text(key, 14, y + 4.5);
+    doc.text("Names in red need attention (latest score below 40%, or a sharp drop). A dash means no score recorded.", 14, y + 9);
+  });
+
+  const total = doc.getNumberOfPages();
+  for (let i = 1; i <= total; i++) {
+    doc.setPage(i);
+    doc.setFontSize(8);
+    doc.setTextColor(110);
+    doc.text(`Page ${i} of ${total}`, pageW - 14, pageH - 8, { align: "right" });
+  }
+
+  doc.save(filename);
 }
 
 const slug = (s: string) => s.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLowerCase() || "class";
@@ -748,6 +914,7 @@ export default function ProgressRecords({ data, user, theme = "light", onExport,
   const [q, setQ] = useState("");
   const [allClasses, setAllClasses] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [pdfBusy, setPdfBusy] = useState(false);
 
   const signedIn = getUser();
   const me: TeacherUser = user ?? { name: signedIn?.name ?? "Teacher", roleLabel: "Subject teacher" };
@@ -774,6 +941,18 @@ export default function ProgressRecords({ data, user, theme = "light", onExport,
     [analysed],
   );
 
+  /* How many learners sit at each level on their latest score */
+  const levelCounts = useMemo(() => {
+    const out: Record<string, number> = {};
+    LEVELS.forEach((l) => {
+      out[l.code] = 0;
+    });
+    analysed.forEach((r) => {
+      if (r.latest !== null) out[levelOf(r.latest).code] += 1;
+    });
+    return out;
+  }, [analysed]);
+
   const term = q.trim().toLowerCase();
   const visible = useMemo(() => {
     const filtered = analysed.filter((r) => {
@@ -792,6 +971,7 @@ export default function ProgressRecords({ data, user, theme = "light", onExport,
   const latestMean = lastIdx >= 0 ? (means[lastIdx] as number) : null;
   const prevMean = prevIdx >= 0 ? (means[prevIdx] as number) : null;
   const meanChange = latestMean !== null && prevMean !== null ? change(latestMean - prevMean, " pts") : null;
+  const latestMeanLevel = latestMean !== null ? levelOf(latestMean) : null;
 
   const changeSelectClass = (id: string) => {
     setSelectedId(id);
@@ -801,24 +981,46 @@ export default function ProgressRecords({ data, user, theme = "light", onExport,
   };
 
   /* Export */
-  const exportCsv = () => {
-    const stamp = todayISO();
-    const targets = allClasses ? classes : cls ? [cls] : [];
-    if (!targets.length) return;
-
-    const blocks: string[] = [];
-    let learnersOut = 0;
-    targets.forEach((c) => {
-      const rows = !allClasses && cls && c.id === cls.id ? visible : sortRows(c.learners.map(analyse), "name");
-      const filterNote = !allClasses && (filter !== "all" || term) ? `${FILTER_LABEL[filter]}${term ? `, search "${q.trim()}"` : ""}` : undefined;
-      blocks.push(csvBlock(c, rows, stamp, filterNote));
-      learnersOut += rows.length;
+  const buildTargets = (): { stamp: string; items: ExportItem[] } => {
+    const list = allClasses ? classes : cls ? [cls] : [];
+    const items = list.map((c) => {
+      const current = !allClasses && cls !== null && c.id === cls.id;
+      const rows = current ? visible : sortRows(c.learners.map(analyse), "name");
+      const note = current && (filter !== "all" || term) ? `${FILTER_LABEL[filter]}${term ? `, search "${q.trim()}"` : ""}` : undefined;
+      return { c, rows, note };
     });
+    return { stamp: todayISO(), items };
+  };
 
+  const exportCsv = () => {
+    const { stamp, items } = buildTargets();
+    if (!items.length) return;
+
+    const learnersOut = items.reduce((n, it) => n + it.rows.length, 0);
     const filename = allClasses ? `progress-records-all-classes-${stamp}.csv` : `progress-records-${slug(cls?.id ?? "class")}-${stamp}.csv`;
-    downloadCsv(filename, blocks.join("\r\n\r\n"));
+    downloadCsv(filename, items.map((it) => csvBlock(it.c, it.rows, stamp, it.note)).join("\r\n\r\n"));
     setNotice(`Downloaded ${filename} with ${learnersOut} ${learnersOut === 1 ? "learner" : "learners"}. It opens in Excel and Google Sheets.`);
     onExport?.({ format: "csv", scope: allClasses ? "all" : "class", classId: cls?.id ?? "", learners: learnersOut });
+  };
+
+  const exportPdf = async () => {
+    const { stamp, items } = buildTargets();
+    if (!items.length || pdfBusy) return;
+
+    const learnersOut = items.reduce((n, it) => n + it.rows.length, 0);
+    const filename = allClasses ? `progress-records-all-classes-${stamp}.pdf` : `progress-records-${slug(cls?.id ?? "class")}-${stamp}.pdf`;
+
+    setPdfBusy(true);
+    setNotice(null);
+    try {
+      await downloadPdf(filename, items, { teacher: me.name, printed: longDate(new Date()) });
+      setNotice(`Downloaded ${filename} with ${learnersOut} ${learnersOut === 1 ? "learner" : "learners"}.`);
+      onExport?.({ format: "pdf", scope: allClasses ? "all" : "class", classId: cls?.id ?? "", learners: learnersOut });
+    } catch {
+      setNotice("Could not create the PDF. Please try again.");
+    } finally {
+      setPdfBusy(false);
+    }
   };
 
   const printPage = () => {
@@ -932,14 +1134,18 @@ export default function ProgressRecords({ data, user, theme = "light", onExport,
                       <Icon name="download" size={16} />
                       Download CSV
                     </button>
+                    <button type="button" className="ss-btn ss-btn-primary" onClick={exportPdf} disabled={pdfBusy} style={pdfBusy ? { opacity: 0.7, cursor: "progress" } : undefined}>
+                      <Icon name="download" size={16} />
+                      {pdfBusy ? "Creating PDF..." : "Download PDF"}
+                    </button>
                     <button type="button" className="ss-btn" onClick={printPage}>
                       <Icon name="print" size={16} />
-                      Print / Save PDF
+                      Print
                     </button>
                   </div>
                   <label className="pr-check">
                     <input type="checkbox" checked={allClasses} onChange={(e) => setAllClasses(e.target.checked)} />
-                    Include all my classes in the CSV
+                    Include all my classes in the CSV and PDF
                   </label>
                 </div>
               </section>
@@ -957,6 +1163,7 @@ export default function ProgressRecords({ data, user, theme = "light", onExport,
                     <Icon name="results" size={16} /> Class mean
                   </span>
                   <b>{latestMean === null ? "n/a" : `${latestMean}%`}</b>
+                  {latestMeanLevel ? <small>Level {latestMeanLevel.code}</small> : null}
                   {meanChange ? <small className={`ss-result-change ${meanChange.kind}`}>{meanChange.label} on the previous assessment</small> : <small>{lastIdx >= 0 ? cls.assessments[lastIdx].name : "No scores yet"}</small>}
                 </article>
                 <article className="ss-card ss-kpi">
@@ -1055,49 +1262,61 @@ export default function ProgressRecords({ data, user, theme = "light", onExport,
                       </thead>
                       <tbody>
                         {visible.length ? (
-                          visible.map((r) => (
-                            <tr key={r.id}>
-                              <td>
-                                <strong>{r.name}</strong>
-                                <small className="pr-adm">
-                                  Adm. {r.admNo}
-                                  {r.attention ? <span className="ss-tag warn pr-flag">Needs attention</span> : null}
-                                </small>
-                              </td>
-                              {cls.assessments.map((a, i) => {
-                                const s = r.scores[i];
-                                return (
-                                  <td key={a.id} className="ss-num">
-                                    {s === null || s === undefined ? (
-                                      <span className="pr-miss" title="No score recorded">
-                                        –
-                                      </span>
-                                    ) : (
-                                      <span className="pr-score" data-tone={tone(s)}>
-                                        {s}
-                                      </span>
-                                    )}
-                                  </td>
-                                );
-                              })}
-                              <td className="ss-num">
-                                {r.latest === null ? (
-                                  <span className="pr-miss">–</span>
-                                ) : (
-                                  <strong>{r.latest}%</strong>
-                                )}
-                              </td>
-                              <td>
-                                <span className="pr-trend" data-t={r.trend}>
-                                  {TREND_LABEL[r.trend]}
-                                  {r.delta !== null ? ` ${signed(r.delta)}` : ""}
-                                </span>
-                              </td>
-                              <td>
-                                <Sparkline points={r.scores} label={`${r.name} scores across assessments`} />
-                              </td>
-                            </tr>
-                          ))
+                          visible.map((r) => {
+                            const latestLevel = r.latest === null ? null : levelOf(r.latest);
+                            return (
+                              <tr key={r.id}>
+                                <td>
+                                  <strong>{r.name}</strong>
+                                  <small className="pr-adm">
+                                    Adm. {r.admNo}
+                                    {r.attention ? <span className="ss-tag warn pr-flag">Needs attention</span> : null}
+                                  </small>
+                                </td>
+                                {cls.assessments.map((a, i) => {
+                                  const s = r.scores[i];
+                                  const lv = s === null || s === undefined ? null : levelOf(s);
+                                  return (
+                                    <td key={a.id} className="ss-num">
+                                      {lv === null || s === null || s === undefined ? (
+                                        <span className="pr-miss" title="No score recorded">
+                                          –
+                                        </span>
+                                      ) : (
+                                        <>
+                                          <span className="pr-score" data-tone={lv.tone} title={lv.label}>
+                                            {s}
+                                          </span>
+                                          <small className="pr-lv">{lv.code}</small>
+                                        </>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                                <td className="ss-num">
+                                  {r.latest === null || latestLevel === null ? (
+                                    <span className="pr-miss">–</span>
+                                  ) : (
+                                    <>
+                                      <strong>{r.latest}%</strong>
+                                      <small className="pr-lv" title={latestLevel.label}>
+                                        {latestLevel.code}
+                                      </small>
+                                    </>
+                                  )}
+                                </td>
+                                <td>
+                                  <span className="pr-trend" data-t={r.trend}>
+                                    {TREND_LABEL[r.trend]}
+                                    {r.delta !== null ? ` ${signed(r.delta)}` : ""}
+                                  </span>
+                                </td>
+                                <td>
+                                  <Sparkline points={r.scores} label={`${r.name} scores across assessments`} />
+                                </td>
+                              </tr>
+                            );
+                          })
                         ) : (
                           <tr>
                             <td colSpan={cls.assessments.length + 4} className="ss-empty pr-none">
@@ -1114,10 +1333,12 @@ export default function ProgressRecords({ data, user, theme = "light", onExport,
                           {means.map((m, i) => (
                             <td key={cls.assessments[i].id} className="ss-num">
                               <strong>{m === null ? "–" : `${m}%`}</strong>
+                              {m === null ? null : <small className="pr-lv">{levelOf(m).code}</small>}
                             </td>
                           ))}
                           <td className="ss-num">
                             <strong>{latestMean === null ? "–" : `${latestMean}%`}</strong>
+                            {latestMeanLevel ? <small className="pr-lv">{latestMeanLevel.code}</small> : null}
                           </td>
                           <td colSpan={2} />
                         </tr>
@@ -1127,19 +1348,14 @@ export default function ProgressRecords({ data, user, theme = "light", onExport,
                 </div>
               </section>
 
-              <div className="pr-legend pr-noprint" aria-label="Score colours">
-                <span>
-                  <i data-tone="a" /> 70% and above
-                </span>
-                <span>
-                  <i data-tone="b" /> 50 to 69%
-                </span>
-                <span>
-                  <i data-tone="c" /> 40 to 49%
-                </span>
-                <span>
-                  <i data-tone="d" /> Below 40%
-                </span>
+              {/* Performance levels, with how many learners are at each on their latest score */}
+              <div className="pr-legend" aria-label="Performance levels">
+                {LEVELS.map((l, i) => (
+                  <span key={l.code} title={l.label} className="pr-lv-legend">
+                    <i data-tone={l.tone} /> {l.code} {levelRange(i)}
+                    <b>{levelCounts[l.code]}</b>
+                  </span>
+                ))}
               </div>
             </>
           )}
